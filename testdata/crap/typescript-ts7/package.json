@@ -1,0 +1,9 @@
+{
+  "name": "crap-metric-testdata-typescript-ts7",
+  "private": true,
+  "description": "Fixture package with TypeScript 7 (no classic compiler API) plus the official @typescript/typescript6 compat shim, so internal/analyzers/typescript's tests can verify complexity.js's fallback path actually works against a real TS7 install.",
+  "dependencies": {
+    "typescript": "^7.0.0",
+    "@typescript/typescript6": "^6.0.0"
+  }
+}

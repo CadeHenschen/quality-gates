@@ -1,0 +1,10 @@
+/crap-metric
+/dupe-metric
+/escape-metric
+/cycle-metric
+crap-report.json
+dupe-report.json
+escape-report.json
+cycle-report.json
+node_modules/
+.claude/

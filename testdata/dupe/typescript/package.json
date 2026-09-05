@@ -1,0 +1,8 @@
+{
+  "name": "dupe-metric-testdata-typescript",
+  "private": true,
+  "description": "Fixture package so internal/tokenizers/typescript's tests can resolve a real installed `typescript` (classic compiler API, 4.x/5.x) the same way a target repo would.",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}

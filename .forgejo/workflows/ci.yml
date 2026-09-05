@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build, vet, test
+    runs-on: [self-hosted, roost-r]
+    container:
+      image: golang:1.26-alpine
+    steps:
+      # actions/checkout is a Node-based action; golang:1.26-alpine has no
+      # Node.js by default. Same workaround as this module's four
+      # predecessor repos' CI (and gamectl's).
+      - name: Install Node (checkout), Python (radon), curl (npm fixture fetch)
+        run: apk add --no-cache nodejs npm curl python3 py3-pip
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      # radon/coverage back crap-metric's Python analyzer tests; the TS
+      # fixtures back crap-metric's and dupe-metric's TypeScript
+      # adapter tests (including the TS7 fallback path — see CLAUDE.md).
+      # Every analyzer/tokenizer/importer test skips itself when its
+      # underlying tool isn't present rather than failing, so this step
+      # existing is what turns "skipped" into "actually exercised" in CI.
+      # --break-system-packages: Alpine's pip enforces PEP 668 by default.
+      - name: Install radon/coverage and TS fixture deps
+        run: |
+          pip install --break-system-packages --quiet radon coverage
+          npm install --prefix testdata/crap/typescript --no-audit --no-fund
+          npm install --prefix testdata/crap/typescript-ts7 --no-audit --no-fund
+          npm install --prefix testdata/dupe/typescript --no-audit --no-fund
+          npm install --prefix testdata/dupe/typescript-ts7 --no-audit --no-fund
+
+      - name: go build / vet / test
+        run: |
+          go build ./...
+          go vet ./...
+          go test ./... -v
+
+  release:
+    name: Release binaries
+    runs-on: [self-hosted, roost-r]
+    needs: [test]
+    if: github.ref == 'refs/heads/main'
+    container:
+      image: golang:1.26-alpine
+    steps:
+      - name: Install Node (checkout) and curl (release API calls)
+        run: apk add --no-cache nodejs curl
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Build linux/amd64 binaries
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o crap-metric-linux-amd64   ./cmd/crap-metric
+          GOOS=linux GOARCH=amd64 go build -o dupe-metric-linux-amd64   ./cmd/dupe-metric
+          GOOS=linux GOARCH=amd64 go build -o escape-metric-linux-amd64 ./cmd/escape-metric
+          GOOS=linux GOARCH=amd64 go build -o cycle-metric-linux-amd64  ./cmd/cycle-metric
+
+      - name: Create release and upload binaries
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        # One release per push, tagged with the short commit SHA, carrying
+        # all four binaries (previously four separate per-tool releases
+        # across four repos). Same conventions as those repos' CI, carried
+        # forward: github.sha instead of `git rev-parse` (no git in this
+        # container — checkout@v4 falls back to a tarball download without
+        # it); the `^{"id":` anchor on the sed extract (a bare greedy
+        # match grabs the release author's nested id instead of the
+        # release's own — a real incident in crap-metric's first CI run);
+        # look-up-by-tag-first so a re-run reuses the release instead of
+        # erroring on a duplicate tag, with the upload loop always
+        # (re-)attempted afterward so a run that created the release but
+        # died before uploading gets repaired by the next run.
+        run: |
+          TAG=${SHA:0:7}
+          API="https://git.roost-r.com/api/v1/repos/cadeh/quality-gates"
+
+          ID=$(curl -sS -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" \
+            | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+
+          if [ -z "$ID" ]; then
+            RESP=$(curl -sS -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"target_commitish\":\"main\",\"draft\":false,\"prerelease\":false}" \
+              "$API/releases")
+            ID=$(echo "$RESP" | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+            if [ -z "$ID" ]; then
+              echo "failed to create release: $RESP" >&2
+              exit 1
+            fi
+          fi
+
+          for BIN in crap-metric dupe-metric escape-metric cycle-metric; do
+            curl -sS -X POST -H "Authorization: token $TOKEN" \
+              -F "attachment=@${BIN}-linux-amd64" \
+              "$API/releases/$ID/assets?name=${BIN}-linux-amd64"
+          done
+
+  self-check:
+    name: Quality gate self-checks
+    runs-on: [self-hosted, roost-r]
+    needs: [release]
+    if: github.ref == 'refs/heads/main'
+    container:
+      image: golang:1.26-alpine
+    steps:
+      - name: Install Node (checkout), curl (install action), Python (radon)
+        run: apk add --no-cache nodejs npm curl python3 py3-pip
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      # Same reasoning as the "test" job: without these, crap-metric's own
+      # Python/TypeScript analysis of *this repo* would silently see 0%
+      # for those paths rather than exercising them for real.
+      - name: Install radon/coverage and TS fixture deps
+        run: |
+          pip install --break-system-packages --quiet radon coverage
+          npm install --prefix testdata/crap/typescript --no-audit --no-fund
+          npm install --prefix testdata/crap/typescript-ts7 --no-audit --no-fund
+
+      # http://forgejo:3000/..., not https://git.roost-r.com/... — see
+      # ci-workflows' README on why the internal hostname is required for
+      # cross-repo action fetches on this runner. One action now installs
+      # all four binaries (previously four separate install-*-metric
+      # actions).
+      - uses: http://forgejo:3000/cadeh/ci-workflows/actions/install-quality-gates@main
+
+      - name: Generate Go coverage
+        run: go test -coverprofile=cover.out ./...
+
+      - name: crap-metric check (self)
+        run: crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --verbose
+
+      - name: dupe-metric check (self)
+        run: dupe-metric check --lang go --dir . --fail-above 5
+
+      - name: escape-metric check (self)
+        run: escape-metric check --lang go --dir . --fail-above 1
+
+      # No cycle-metric self-check — it only analyzes Python/TS, and this
+      # repo is Go, so there's no source of its own it could check. See
+      # README's "cycle-metric excludes Go" note.
+
+      - name: Compare crap trend against previous report
+        if: always()
+        # releases?limit=2 sorts newest-first; index 0 is this run's own
+        # release (already created by the "release" job above), index 1
+        # is the actual baseline. Explicit User-Agent on every request —
+        # this host's edge 403s Python urllib's default one specifically
+        # (see CLAUDE.md).
+        run: |
+          python3 - <<'PYEOF'
+          import json, urllib.request, sys
+
+          UA = {"User-Agent": "quality-gates-ci/1.0"}
+
+          req = urllib.request.Request(
+              "https://git.roost-r.com/api/v1/repos/cadeh/quality-gates/releases?limit=2",
+              headers=UA,
+          )
+          with urllib.request.urlopen(req) as resp:
+              releases = json.load(resp)
+
+          if len(releases) < 2:
+              print("no previous release to compare against (first release)")
+              sys.exit(0)
+
+          prev = releases[1]
+          asset = next((a for a in prev.get("assets", []) if a["name"] == "crap-report.json"), None)
+          if asset is None:
+              print(f"previous release {prev['tag_name']} has no crap-report.json (predates this feature)")
+              sys.exit(0)
+
+          req = urllib.request.Request(asset["browser_download_url"], headers=UA)
+          with urllib.request.urlopen(req) as resp, open("prev-crap-report.json", "wb") as out:
+              out.write(resp.read())
+          print(f"comparing against {prev['tag_name']}")
+          PYEOF
+
+          if [ -f prev-crap-report.json ]; then
+            crap-metric diff --old prev-crap-report.json --new crap-report.json
+          fi
+
+      - name: Upload reports as workflow artifacts
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: quality-gate-reports
+          path: |
+            crap-report.json
+            dupe-report.json
+            escape-report.json
+
+      - name: Attach crap-report.json to this run's release
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        # So the *next* run's trend comparison has something to diff
+        # against. Best-effort: if the release job's tag lookup fails,
+        # skip silently rather than fail a job whose real gates already
+        # ran above.
+        run: |
+          TAG=${SHA:0:7}
+          API="https://git.roost-r.com/api/v1/repos/cadeh/quality-gates"
+          ID=$(curl -sS -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" \
+            | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+          if [ -n "$ID" ]; then
+            curl -sS -X POST -H "Authorization: token $TOKEN" \
+              -F "attachment=@crap-report.json" \
+              "$API/releases/$ID/assets?name=crap-report.json"
+          fi
