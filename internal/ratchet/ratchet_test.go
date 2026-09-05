@@ -1,6 +1,7 @@
 package ratchet
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,5 +48,41 @@ func TestMatches(t *testing.T) {
 		if got != c.want {
 			t.Errorf("Matches(%q) = %v, want %v", c.itemFile, got, c.want)
 		}
+	}
+}
+
+func TestLoadEmptyPathMeansNoRatchet(t *testing.T) {
+	var stderr bytes.Buffer
+	files, ok := Load("", "some-tool", &stderr)
+	if !ok || files != nil {
+		t.Errorf("Load(\"\") = (%v, %v), want (nil, true)", files, ok)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestLoadReadsRealFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "changed.txt")
+	if err := os.WriteFile(path, []byte("a.go\nb.go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	files, ok := Load(path, "some-tool", &stderr)
+	if !ok || len(files) != 2 || !files["a.go"] || !files["b.go"] {
+		t.Errorf("Load(%q) = (%v, %v), want the file's two entries", path, files, ok)
+	}
+}
+
+func TestLoadMissingFileReportsToolPrefixedError(t *testing.T) {
+	var stderr bytes.Buffer
+	files, ok := Load("/nonexistent/changed-files.txt", "some-tool", &stderr)
+	if ok || files != nil {
+		t.Errorf("Load(missing) = (%v, %v), want (nil, false)", files, ok)
+	}
+	if got := stderr.String(); !bytes.Contains([]byte(got), []byte("some-tool: reading --only-files:")) {
+		t.Errorf("stderr = %q, want it prefixed with the tool name", got)
 	}
 }

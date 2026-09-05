@@ -42,14 +42,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	var onlyFiles map[string]bool
-	if *onlyFilesPath != "" {
-		loaded, err := ratchet.LoadFiles(*onlyFilesPath)
-		if err != nil {
-			fmt.Fprintln(stderr, "cycle-metric: reading --only-files:", err)
-			return 2
-		}
-		onlyFiles = loaded
+	onlyFiles, ok := ratchet.Load(*onlyFilesPath, "cycle-metric", stderr)
+	if !ok {
+		return 2
 	}
 
 	importer, err := importerFor(*lang)

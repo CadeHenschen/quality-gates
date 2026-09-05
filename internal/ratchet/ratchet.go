@@ -11,6 +11,8 @@
 package ratchet
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,4 +52,21 @@ func Matches(itemFile string, onlyFiles map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// Load wraps LoadFiles for a CLI's --only-files flag: path == "" means the
+// flag wasn't passed (files is nil, ok is true, meaning "don't ratchet").
+// A read failure is reported to stderr prefixed with toolName, matching
+// the message shape every one of these CLIs used before this was
+// extracted (identical across all four except for that prefix).
+func Load(path, toolName string, stderr io.Writer) (files map[string]bool, ok bool) {
+	if path == "" {
+		return nil, true
+	}
+	loaded, err := LoadFiles(path)
+	if err != nil {
+		fmt.Fprintln(stderr, toolName+": reading --only-files:", err)
+		return nil, false
+	}
+	return loaded, true
 }

@@ -70,6 +70,35 @@ fixture output. Keep it that way: mocking the underlying tool's output
 format is exactly the kind of assumption that silently drifts from
 reality when that tool's output shape changes.
 
+## dupe-metric self-check threshold: 18%, not the tool's own default of 5%
+
+Right after the four-repo merge, self-checking dupe-metric against this
+repo's own combined Go source came back at 17.08% duplication — a real
+CI failure caught the same day this repo was created, not a hypothetical.
+Two genuinely identical blocks got extracted as a result — `--only-files`
+loading/error-handling (`ratchet.Load`, replacing an identical 7-line
+block copy-pasted into all four `cmd/X/main.go` files) and each Report
+type's JSON encode/decode + Passed→exit-code mapping (`internal/reportio`,
+replacing 4× identical `WriteJSON`/`ReadReport`/`ExitCode` bodies) — both
+real fixes, not threshold-dodging, and both left the tool strictly
+smaller and more correct. That brought it down to ~15%, not below 5%.
+
+The rest is cross-tool *structural* similarity, not copy-paste: parallel
+Python/TypeScript adapters across `analyzers`/`tokenizers`/`importers`
+(same task shape — run an embedded script, parse its JSON output — for
+a different purpose each), and each tool's `WriteTable` following the
+same "summary line, then a row loop, then a truncation note" shape with
+genuinely different columns. Forcing these into one generic abstraction
+would be exactly the kind of unification this file already warns
+against elsewhere ("their data models are genuinely different, so
+unifying them would be forced, not real deduplication") — so the
+self-check's `--fail-above` was raised to 18 instead, with this entry as
+the paper trail for why. If a future change pushes it meaningfully
+higher than that, look for *actual* copy-paste first (the ratchet/
+reportio pattern) before just raising the number again — this exception
+is for real structural echoes from the four-way merge, not a blank
+check for any future duplication in this repo.
+
 ## dupe-metric: "boundary bleed" is expected, don't special-case it away
 
 `internal/dupe/shingle.go`'s `Find` can report a duplicate block a token

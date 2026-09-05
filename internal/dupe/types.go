@@ -7,6 +7,8 @@
 // gate is the more honest shape than a bolted-on subcommand.
 package dupe
 
+import "git.roost-r.com/cadeh/quality-gates/internal/reportio"
+
 // Token is one lexical token from a source file, as produced by a language
 // tokenizer. Text is used for exact matching, so a tokenizer that wants
 // "near-duplicate despite renamed identifiers" detection would normalize
@@ -87,8 +89,5 @@ func countLines(f FileTokens) int {
 
 // ExitCode maps a Report's verdict to a process exit code.
 func (r Report) ExitCode() int {
-	if r.Passed {
-		return 0
-	}
-	return 1
+	return reportio.ExitCode(r.Passed)
 }

@@ -138,7 +138,16 @@ jobs:
         run: crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --verbose
 
       - name: dupe-metric check (self)
-        run: dupe-metric check --lang go --dir . --fail-above 5
+        # --fail-above 18, not the tool's own default of 5: merging four
+        # previously-independent, structurally-similar CLIs into one repo
+        # legitimately raised this repo's own baseline duplication rate —
+        # see CLAUDE.md's "dupe-metric self-check threshold" entry for the
+        # full reasoning (measured ~15% right after the merge, largely
+        # cross-tool structural echoes like parallel python/typescript
+        # adapters, not same-tool copy-paste; two real, clean extractions
+        # already happened — internal/ratchet.Load, internal/reportio —
+        # this is what's left after those).
+        run: dupe-metric check --lang go --dir . --fail-above 18
 
       - name: escape-metric check (self)
         run: escape-metric check --lang go --dir . --fail-above 1

@@ -1,24 +1,21 @@
 package dupe
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
 // WriteJSON writes the full report as JSON.
 func (r Report) WriteJSON(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(r)
+	return reportio.WriteJSON(w, r)
 }
 
 // ReadReport reads back a report written by WriteJSON.
 func ReadReport(r io.Reader) (Report, error) {
-	var report Report
-	err := json.NewDecoder(r).Decode(&report)
-	return report, err
+	return reportio.ReadReport[Report](r)
 }
 
 // WriteTable writes a human-readable table of clones, largest first, to w.

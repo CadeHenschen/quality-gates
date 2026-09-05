@@ -1,11 +1,12 @@
 package escape
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
 // Report is a full escape-hatch scan.
@@ -46,17 +47,12 @@ func NewReport(hatches []Hatch, totalLines int, failAbove float64) Report {
 
 // ExitCode maps a Report's verdict to a process exit code.
 func (r Report) ExitCode() int {
-	if r.Passed {
-		return 0
-	}
-	return 1
+	return reportio.ExitCode(r.Passed)
 }
 
 // WriteJSON writes the full report as JSON.
 func (r Report) WriteJSON(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(r)
+	return reportio.WriteJSON(w, r)
 }
 
 // WriteTable writes a human-readable table to w.

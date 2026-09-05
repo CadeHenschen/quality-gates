@@ -49,14 +49,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	var onlyFiles map[string]bool
-	if *onlyFilesPath != "" {
-		loaded, err := ratchet.LoadFiles(*onlyFilesPath)
-		if err != nil {
-			fmt.Fprintln(stderr, "escape-metric: reading --only-files:", err)
-			return 2
-		}
-		onlyFiles = loaded
+	onlyFiles, ok := ratchet.Load(*onlyFilesPath, "escape-metric", stderr)
+	if !ok {
+		return 2
 	}
 
 	result, err := escape.Scan(escape.Options{Dir: *dir, Lang: *lang})

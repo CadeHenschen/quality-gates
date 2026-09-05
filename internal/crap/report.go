@@ -1,26 +1,23 @@
 package crap
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
 // WriteJSON writes the full report as JSON (the machine-readable artifact,
 // e.g. crap-report.json).
 func (r Report) WriteJSON(w io.Writer) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(r)
+	return reportio.WriteJSON(w, r)
 }
 
 // ReadReport reads back a report written by WriteJSON — used by `diff` to
 // load a baseline report from an earlier run.
 func ReadReport(r io.Reader) (Report, error) {
-	var report Report
-	err := json.NewDecoder(r).Decode(&report)
-	return report, err
+	return reportio.ReadReport[Report](r)
 }
 
 // WriteTable writes a human-readable, worst-first hotspot table to w. Rows
