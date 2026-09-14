@@ -10,6 +10,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/python"
+	swifttokenizer "git.roost-r.com/cadeh/quality-gates/internal/tokenizers/swift"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/typescript"
 )
 
@@ -19,6 +20,7 @@ func TestTokenizerFor(t *testing.T) {
 		"go": "golang.Tokenizer", "golang": "golang.Tokenizer",
 		"ts": "typescript.Tokenizer", "typescript": "typescript.Tokenizer",
 		"js": "typescript.Tokenizer", "javascript": "typescript.Tokenizer",
+		"swift": "swift.Tokenizer",
 	}
 	for lang, want := range cases {
 		tk, err := tokenizerFor(lang)
@@ -34,6 +36,8 @@ func TestTokenizerFor(t *testing.T) {
 			got = "golang.Tokenizer"
 		case typescript.Tokenizer:
 			got = "typescript.Tokenizer"
+		case swifttokenizer.Tokenizer:
+			got = "swift.Tokenizer"
 		}
 		if got != want {
 			t.Errorf("tokenizerFor(%q) = %T, want %s", lang, tk, want)

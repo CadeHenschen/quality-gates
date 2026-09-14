@@ -153,6 +153,66 @@ way: the first version only resolved the module part of
 `from X import Y`, missing the case where `Y` itself is the target file
 (`from . import b`, module empty, `b` the imported name).
 
+## Swift support: native lexer shared by two tools, cycle-metric excludes it
+
+`internal/swiftlex` is a hand-written, pure-Go lexer for Swift — no
+subprocess, no Swift toolchain dependency for the analysis itself (only
+for coverage *generation*, done by the target repo's own CI, same as
+every other language). It's shared by `internal/analyzers/swift`
+(crap-metric) and `internal/tokenizers/swift` (dupe-metric), the same way
+Go's own analyzer/tokenizer both sit on stdlib `go/*` packages — except
+here we're writing the "stdlib" ourselves, since Go has none for Swift.
+
+Three things were deliberately left unbuilt rather than guessed at with a
+heuristic, each documented in `internal/swiftlex`'s package doc comment
+rather than solved:
+
+- **Regex literals** (`/pattern/`, Swift 5.7+) aren't supported — `/` is
+  always lexed as division. A regex-vs-division heuristic's failure mode
+  isn't a miscounted token, it's corrupted brace-depth tracking for the
+  rest of the file (function-boundary detection depends on it), which is
+  worse than under-supporting a rare literal form.
+- **String interpolation** (`"\(expr)"`) contents aren't tokenized
+  separately — the whole literal, interpolation included, is one opaque
+  token. The lexer still tracks interpolation nesting internally so the
+  literal's own boundaries are always found correctly (including when a
+  nested interpolated expression contains its own string with its own
+  quotes) — it just doesn't emit separate tokens for what's inside.
+- **Ternary `cond ? a : b`** isn't counted toward cyclomatic complexity —
+  lexically indistinguishable from optional chaining/optional-type `?`
+  without real parsing.
+
+The sharpest correctness case in `internal/analyzers/swift` wasn't lexing
+at all, it was **nested local `func`** (a real Swift feature Go has no
+equivalent of): a naive keyword-triggered boundary detector emits a
+second, overlapping `crap.Function` for it. The fix mirrors how Go's own
+analyzer already avoids the equivalent problem — `go/ast.Inspect(fn, ...)`
+walks nested `FuncLit`s into the same `FuncDecl`'s complexity count rather
+than emitting them separately — by only looking for new function starts
+at the top level (outside any function body already being scanned), so a
+nested `func`'s branches fold into the enclosing function automatically,
+with no special-casing needed. Computed-property accessors
+(`get`/`set`/`willSet`/`didSet`) are the other side of the same v1 scope
+choice: their bodies are brace-tracked over (so they can't corrupt
+anything) but never emitted as their own entry, so their complexity is
+simply invisible rather than misattributed.
+
+**cycle-metric deliberately excludes Swift too, for a different reason
+than Go.** Go's exclusion is "the compiler already forbids it, so the
+check would always report zero." Swift's is structural: files within one
+module never import each other at all — there's no per-file import
+statement to extract the way Python/TS have one, so file-level cycle
+detection would find nothing for a typical single-target app. Real cycles
+could only exist between separate SPM modules (`import OtherModule`),
+which would need `Package.swift`-level target-to-directory resolution —
+and `internal/ratchet`'s `--only-files` matching is suffix-based against
+real file paths, so module-granularity graph nodes wouldn't plug into the
+existing ratchet mechanism without extending it. Decided not to build
+that for v1; `cmd/cycle-metric/main.go`'s `importerFor` returns an
+explicit explanatory error for `--lang swift`, same pattern as its `"go"`
+case, rather than falling through to the generic "unknown language"
+message.
+
 ## This host's edge blocks Python urllib's default User-Agent
 
 Any CI step that calls `git.roost-r.com`'s API from Python

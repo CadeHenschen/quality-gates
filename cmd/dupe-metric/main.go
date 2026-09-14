@@ -13,10 +13,11 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/python"
+	swifttokenizer "git.roost-r.com/cadeh/quality-gates/internal/tokenizers/swift"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/typescript"
 )
 
-const usage = "usage: dupe-metric check --lang python|go|ts --dir DIR [--min-tokens N] [--fail-above PCT] [--top N] [--only-files PATH] [--json PATH]"
+const usage = "usage: dupe-metric check --lang python|go|ts|swift --dir DIR [--min-tokens N] [--fail-above PCT] [--top N] [--only-files PATH] [--json PATH]"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -107,9 +108,11 @@ func tokenizerFor(lang string) (tokenizers.Tokenizer, error) {
 		return golang.Tokenizer{}, nil
 	case "ts", "typescript", "js", "javascript":
 		return typescript.Tokenizer{}, nil
+	case "swift":
+		return swifttokenizer.Tokenizer{}, nil
 	case "":
 		return nil, fmt.Errorf("--lang is required")
 	default:
-		return nil, fmt.Errorf("unknown --lang %q (want python, go, or ts)", lang)
+		return nil, fmt.Errorf("unknown --lang %q (want python, go, ts, or swift)", lang)
 	}
 }

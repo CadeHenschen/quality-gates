@@ -18,12 +18,18 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
 
-All four support `python` and `ts`/`typescript`/`js`; `crap-metric` and
-`dupe-metric` also support `go`. `cycle-metric` deliberately excludes Go
-— the compiler already refuses to build a package-import cycle, so a
-detector for it would always report zero. See each package's doc comment
-(`internal/crap`, `internal/dupe`, `internal/escape`, `internal/cycle`)
-for the full reasoning and known characteristics of its method.
+All four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
+`dupe-metric`, and `escape-metric` also support `go` and `swift`.
+`cycle-metric` deliberately excludes both: Go's compiler already refuses
+to build a package-import cycle, so a detector for it would always
+report zero; Swift files within one module never import each other at
+all (no per-file import graph exists the way Python/TS have one), and
+cycles between separate modules would need `Package.swift`-level
+resolution this tool doesn't implement — see `--lang swift`'s own error
+message and CLAUDE.md's Swift entry for the full reasoning. See each
+package's doc comment (`internal/crap`, `internal/dupe`, `internal/escape`,
+`internal/cycle`) for the full reasoning and known characteristics of its
+method.
 
 ## Ratcheting: `--only-files`
 
@@ -59,10 +65,10 @@ needs from the caller (git installed before checkout, `fetch-depth: 0`).
 ## Usage
 
 ```
-crap-metric   check --lang <python|go|ts> --dir <dir> [--coverage PATH] [--fail-above N] [--verbose] [--only-files PATH] [--json PATH]
+crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--verbose] [--only-files PATH] [--json PATH]
 crap-metric   diff  --old PATH --new PATH [--top N] [--json]
-dupe-metric   check --lang <python|go|ts> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
-escape-metric check --lang <python|ts> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
+dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
+escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
 ```
 
@@ -85,6 +91,12 @@ doesn't run tests itself:
   API from its main entry point — the script falls back to Microsoft's
   official `@typescript/typescript6` compat package if present. See
   CLAUDE.md for the full TS7 story.
+- **Swift**: `swift test --enable-code-coverage` then
+  `llvm-cov export -format=lcov <test binary> -instr-profile <profdata>`
+  → pass the resulting `.lcov` file. Complexity is computed natively via
+  `internal/swiftlex`, a hand-written lexer (no subprocess, no Swift
+  toolchain dependency for the analysis itself) — see CLAUDE.md for its
+  design and documented v1 scope limitations.
 
 ### crap-metric: trend diffing
 
@@ -96,12 +108,12 @@ only — it always exits `0`; the gate stays `check`'s job.
 ### dupe-metric / escape-metric: how each language is analyzed
 
 No external tool needed for either language in **escape-metric** (pure
-Go regex over raw text) or for **Go** in dupe-metric (native
-`go/scanner`). **Python** tokenizing uses an embedded script against the
-standard library's `tokenize` module (no pip package needed).
-**TypeScript/JS** tokenizing uses an embedded Node script against the
-target repo's own `typescript` package's scanner — same TS7 fallback as
-crap-metric.
+Go regex over raw text) or for **Go**/**Swift** in dupe-metric (native
+`go/scanner` for Go, `internal/swiftlex` for Swift). **Python** tokenizing
+uses an embedded script against the standard library's `tokenize` module
+(no pip package needed). **TypeScript/JS** tokenizing uses an embedded
+Node script against the target repo's own `typescript` package's scanner
+— same TS7 fallback as crap-metric.
 
 Both tools skip comments and test files (`*_test.go`, `test_*.py`/
 `*_test.py`, `*.test.ts`/`*.spec.ts`) — duplicate/suppressed test
@@ -125,14 +137,15 @@ cmd/
   crap-metric/    dupe-metric/    escape-metric/    cycle-metric/
 internal/
   ratchet/                        # shared --only-files primitives
-  crap/           analyzers/{golang,python,typescript}
-  dupe/           tokenizers/{golang,python,typescript}
+  swiftlex/                       # native Swift lexer, shared by analyzers/tokenizers below
+  crap/           analyzers/{golang,python,typescript,swift}
+  dupe/           tokenizers/{golang,python,typescript,swift}
   escape/
-  cycle/          importers/{python,typescript}
+  cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
 testdata/
-  crap/{golang,python,typescript,typescript-ts7}/
-  dupe/{golang,python,typescript,typescript-ts7}/
-  escape/{golang,python,typescript}/
+  crap/{golang,python,typescript,typescript-ts7,swift}/
+  dupe/{golang,python,typescript,typescript-ts7,swift}/
+  escape/{golang,python,typescript,swift}/
   cycle/{python,typescript}/
 ```
 
@@ -174,4 +187,6 @@ mocks — `radon` and `coverage` (Python, for crap-metric) and `node` +
 `typescript` (in each `testdata/{crap,dupe}/typescript{,-ts7}/node_modules`,
 `npm install` there if missing) need to be available locally to run the
 full suite. `python3` alone (stdlib `tokenize`, no pip package) covers
-dupe-metric's and cycle-metric's Python fixtures.
+dupe-metric's and cycle-metric's Python fixtures. Swift needs nothing
+extra to install — `internal/swiftlex` is pure Go, like the Go adapters
+themselves.

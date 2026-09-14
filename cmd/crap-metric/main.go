@@ -12,13 +12,14 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/python"
+	swiftanalyzer "git.roost-r.com/cadeh/quality-gates/internal/analyzers/swift"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/typescript"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
 )
 
 const usage = `usage:
-  crap-metric check --lang python|go|ts --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--json PATH]
+  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--json PATH]
   crap-metric diff --old PATH --new PATH [--top N] [--json]`
 
 func main() {
@@ -167,9 +168,11 @@ func analyzerFor(lang string) (analyzers.Analyzer, error) {
 		return golang.Analyzer{}, nil
 	case "ts", "typescript", "js", "javascript":
 		return typescript.Analyzer{}, nil
+	case "swift":
+		return swiftanalyzer.Analyzer{}, nil
 	case "":
 		return nil, fmt.Errorf("--lang is required")
 	default:
-		return nil, fmt.Errorf("unknown --lang %q (want python, go, or ts)", lang)
+		return nil, fmt.Errorf("unknown --lang %q (want python, go, ts, or swift)", lang)
 	}
 }

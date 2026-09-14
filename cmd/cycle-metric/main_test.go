@@ -45,6 +45,9 @@ func TestImporterFor(t *testing.T) {
 	if _, err := importerFor("go"); err == nil {
 		t.Error("importerFor(\"go\") should error with an explanation, not silently succeed")
 	}
+	if _, err := importerFor("swift"); err == nil {
+		t.Error("importerFor(\"swift\") should error with an explanation, not silently succeed")
+	}
 }
 
 func TestRunUsageError(t *testing.T) {

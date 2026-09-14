@@ -105,6 +105,8 @@ func importerFor(lang string) (importers.Importer, error) {
 		return typescript.Importer{}, nil
 	case "go", "golang":
 		return nil, fmt.Errorf("--lang go isn't supported: the Go compiler already refuses to build a package-import cycle, so this check would always report zero — see README")
+	case "swift":
+		return nil, fmt.Errorf("--lang swift isn't supported: Swift files within one module never import each other (no per-file import graph exists to detect a cycle in), and cross-module detection would need Package.swift-level resolution this tool doesn't implement — see README")
 	case "":
 		return nil, fmt.Errorf("--lang is required")
 	default:

@@ -3,6 +3,7 @@ package escape
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +61,42 @@ func TestScanTypescriptFixture(t *testing.T) {
 	for _, want := range []string{"ts-ignore", "eslint-disable"} {
 		if byPattern[want] != 1 {
 			t.Errorf("%s count = %d, want 1: %+v", want, byPattern[want], result.Hatches)
+		}
+	}
+}
+
+func TestScanSwiftFixture(t *testing.T) {
+	result, err := Scan(Options{Dir: "../../testdata/escape/swift", Lang: "swift"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	byPattern := map[string]int{}
+	for _, h := range result.Hatches {
+		byPattern[h.Pattern]++
+	}
+	if byPattern["force-try"] != 1 {
+		t.Errorf("force-try count = %d, want 1: %+v", byPattern["force-try"], result.Hatches)
+	}
+	if byPattern["force-cast"] != 1 {
+		t.Errorf("force-cast count = %d, want 1: %+v", byPattern["force-cast"], result.Hatches)
+	}
+	if byPattern["discarded-error"] != 1 {
+		t.Errorf("discarded-error count = %d, want 1: %+v", byPattern["discarded-error"], result.Hatches)
+	}
+	if byPattern["swiftlint-disable"] != 1 {
+		t.Errorf("swiftlint-disable count = %d, want 1: %+v", byPattern["swiftlint-disable"], result.Hatches)
+	}
+	// force-unwrap fires on its own dedicated line plus the force-try and
+	// force-cast lines too (documented overlap in patterns.go — RE2 has no
+	// lookbehind to tell "x!" apart from "try!"/"as!"'s own '!').
+	if byPattern["force-unwrap"] != 3 {
+		t.Errorf("force-unwrap count = %d, want 3: %+v", byPattern["force-unwrap"], result.Hatches)
+	}
+
+	for _, h := range result.Hatches {
+		if h.Pattern == "force-unwrap" && (strings.Contains(h.Text, "!=") || strings.Contains(h.Text, "return !flag")) {
+			t.Errorf("false-positive force-unwrap match: %+v", h)
 		}
 	}
 }

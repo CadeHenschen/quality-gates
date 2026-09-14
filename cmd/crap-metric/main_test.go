@@ -10,6 +10,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/python"
+	swiftanalyzer "git.roost-r.com/cadeh/quality-gates/internal/analyzers/swift"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/typescript"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 )
@@ -24,6 +25,7 @@ func TestAnalyzerFor(t *testing.T) {
 		"typescript": "typescript.Analyzer",
 		"js":         "typescript.Analyzer",
 		"javascript": "typescript.Analyzer",
+		"swift":      "swift.Analyzer",
 	}
 	for lang, want := range cases {
 		a, err := analyzerFor(lang)
@@ -39,6 +41,8 @@ func TestAnalyzerFor(t *testing.T) {
 			got = "golang.Analyzer"
 		case typescript.Analyzer:
 			got = "typescript.Analyzer"
+		case swiftanalyzer.Analyzer:
+			got = "swift.Analyzer"
 		}
 		if got != want {
 			t.Errorf("analyzerFor(%q) = %T, want %s", lang, a, want)

@@ -60,6 +60,32 @@ var languages = map[string]LanguagePatterns{
 			{Name: "eslint-disable", Regex: regexp.MustCompile(`//\s*eslint-disable`)},
 		},
 	},
+	"swift": {
+		Extensions:   []string{".swift"},
+		TestSuffixes: []string{"Tests.swift", "Test.swift"},
+		Patterns: []Pattern{
+			{Name: "force-try", Regex: regexp.MustCompile(`\btry!`)},
+			{Name: "force-cast", Regex: regexp.MustCompile(`\bas!`)},
+			// Postfix force-unwrap: a '!' right after an identifier/)/],
+			// not followed by '=' (so "!=" doesn't match) and not preceded
+			// by another '!' (so "x!!" only counts once per '!', and the
+			// unrelated prefix "!" boolean-NOT never matches at all, since
+			// that '!' isn't preceded by an identifier character). Known
+			// overlap, not fixed: RE2 (Go's regexp engine) has no
+			// lookbehind, so this can't tell "x!" apart from the "!" in
+			// "try!"/"as!" by the single preceding character alone — a
+			// force-try or force-cast line also counts as force-unwrap.
+			// Accepted rather than special-cased: all three names still
+			// point at the same real "!", which is still useful signal,
+			// and a narrower rule would need a real parser to do properly.
+			{Name: "force-unwrap", Regex: regexp.MustCompile(`[\w)\]]!([^=!]|$)`)},
+			// try? silently converts a thrown error to nil, discarding it —
+			// same class of hatch as "bare-except" (Python) / "discarded-
+			// result" (Go).
+			{Name: "discarded-error", Regex: regexp.MustCompile(`\btry\?\s`)},
+			{Name: "swiftlint-disable", Regex: regexp.MustCompile(`//\s*swiftlint:disable\b`)},
+		},
+	},
 }
 
 // Aliases so --lang accepts the same spellings crap-metric/dupe-metric do.
