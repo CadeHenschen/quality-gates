@@ -55,12 +55,21 @@ jobs:
 
       - uses: https://code.forgejo.org/actions/checkout@v4
 
-      - name: Build linux/amd64 binaries
+      - name: Build linux/amd64 and darwin/arm64 binaries
+        # darwin/arm64 added alongside linux/amd64 for the mac-mini runner
+        # (self-hosted, macos, Apple Silicon) — health-suite's Xcode-based
+        # jobs run there and can't exec the linux/amd64 binaries. Plain
+        # `go build` cross-compiles fine for both from this one Alpine
+        # container; nothing OS-specific in this module needs cgo.
         run: |
-          GOOS=linux GOARCH=amd64 go build -o crap-metric-linux-amd64   ./cmd/crap-metric
-          GOOS=linux GOARCH=amd64 go build -o dupe-metric-linux-amd64   ./cmd/dupe-metric
-          GOOS=linux GOARCH=amd64 go build -o escape-metric-linux-amd64 ./cmd/escape-metric
-          GOOS=linux GOARCH=amd64 go build -o cycle-metric-linux-amd64  ./cmd/cycle-metric
+          GOOS=linux  GOARCH=amd64 go build -o crap-metric-linux-amd64     ./cmd/crap-metric
+          GOOS=linux  GOARCH=amd64 go build -o dupe-metric-linux-amd64     ./cmd/dupe-metric
+          GOOS=linux  GOARCH=amd64 go build -o escape-metric-linux-amd64   ./cmd/escape-metric
+          GOOS=linux  GOARCH=amd64 go build -o cycle-metric-linux-amd64    ./cmd/cycle-metric
+          GOOS=darwin GOARCH=arm64 go build -o crap-metric-darwin-arm64    ./cmd/crap-metric
+          GOOS=darwin GOARCH=arm64 go build -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
+          GOOS=darwin GOARCH=arm64 go build -o escape-metric-darwin-arm64  ./cmd/escape-metric
+          GOOS=darwin GOARCH=arm64 go build -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
 
       - name: Create release and upload binaries
         env:
@@ -97,9 +106,11 @@ jobs:
           fi
 
           for BIN in crap-metric dupe-metric escape-metric cycle-metric; do
-            curl -sS -X POST -H "Authorization: token $TOKEN" \
-              -F "attachment=@${BIN}-linux-amd64" \
-              "$API/releases/$ID/assets?name=${BIN}-linux-amd64"
+            for PLATFORM in linux-amd64 darwin-arm64; do
+              curl -sS -X POST -H "Authorization: token $TOKEN" \
+                -F "attachment=@${BIN}-${PLATFORM}" \
+                "$API/releases/$ID/assets?name=${BIN}-${PLATFORM}"
+            done
           done
 
   self-check:
