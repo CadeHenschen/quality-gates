@@ -61,6 +61,17 @@ func TestRunUsageError(t *testing.T) {
 	}
 }
 
+func TestRunVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("run([\"version\"]) exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "cycle-metric") {
+		t.Errorf("expected version output to mention cycle-metric, got %q", stdout.String())
+	}
+}
+
 func TestRunGoUnsupported(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"check", "--lang", "go", "--dir", "."}, &stdout, &stderr)

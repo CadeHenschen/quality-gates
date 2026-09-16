@@ -272,3 +272,33 @@ duplicated against each other, leading directly to the
 `internal/tokenizers/tokenizer.go` extraction. The tool finding gaps in
 itself, closed with real tests or real refactors rather than a raised
 threshold, is the loop working as designed.
+
+## Releases are for distribution only — report history lives on a `reports` branch
+
+Early on, one Forgejo release per push carried both the distribution
+binaries `install-quality-gates` downloads *and* `crap-report.json`, kept
+around specifically so the next run's trend-diff had something to read
+(`releases?limit=2`, newest-first). That conflation had a real cost: it
+meant releases could never be cleaned up (deleting one could delete the
+only copy of a report a later run still needed), so every push — including
+doc-only ones — grew the release list forever, and no CLI could report
+its own version, so a consumer floating on `install-quality-gates`'s
+`latest` had no way to tell what it was actually running or pin away from
+a bad push.
+
+Fixed by separating the two concerns: `crap-report.json` now lives on a
+dedicated `reports` branch (one commit per self-check run, that file
+only), read via plain `git show origin/reports:crap-report.json` instead
+of the Releases API — no more Python `urllib` + User-Agent workaround for
+this particular lookup. With no history depending on them, releases are
+now pure distribution artifacts and the release job prunes down to the
+newest 20 after every push. Each binary also gets a real `version`
+subcommand now, baked in via `-ldflags "-X main.version=<short-sha>"` at
+build time — same convention as `gamectl`'s `-X main.version=`, not
+invented fresh — and `install-quality-gates` grew an optional `version`
+input so a consumer can pin to a known-good release instead of always
+floating on `latest`. No semver: an internal tool with a handful of
+consumer repos doesn't need major/minor/patch meaning yet, and the short
+SHA plus a real `version` output already answers "what am I running" and
+"can I pin a known-good build" — don't add semver machinery here unless an
+actual consumer need shows up for it.

@@ -70,9 +70,12 @@ crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+<any tool>    version
 ```
 
 Every `check` also takes `--top N` (rows to print, default 20, `0` = all).
+`version` prints the build's short commit SHA (`dev` for a plain
+`go build`/`go run`, since it's baked in via `-ldflags` — see Status).
 
 ### crap-metric: per-language coverage input
 
@@ -164,15 +167,23 @@ tool has its own `golang/sample.go`).
 ## Status
 
 CI (`.forgejo/workflows/ci.yml`) builds/vets/tests the whole module on
-every push and PR; on `main`, it also builds all four `linux/amd64`
-binaries and publishes them to **one** Forgejo release tagged with the
-short commit SHA, then self-checks crap-metric/dupe-metric/escape-metric
-against the repo's own (now much larger, all-four-tools) Go source —
-cycle-metric still can't self-check, being Go-only in implementation but
-not supporting Go analysis.
+every push and PR; on `main`, it also builds all four `linux/amd64` and
+`darwin/arm64` binaries (the latter for the mac-mini runner), each with
+`-ldflags "-X main.version=<short-sha>"` baked in, and publishes them to
+**one** Forgejo release tagged with that same short commit SHA — pure
+distribution, no report data attached, so the release job also prunes
+releases down to the newest 20 after each push. It then self-checks
+crap-metric/dupe-metric/escape-metric against the repo's own (now much
+larger, all-four-tools) Go source — cycle-metric still can't self-check,
+being Go-only in implementation but not supporting Go analysis.
+crap-metric's self-check trend-diffs against the previous run's report,
+read from (and then advanced on) a dedicated `reports` branch — one
+commit per run, `crap-report.json` only — rather than a release asset.
 
-Consumed by `d_amp_d` via `ci-workflows`' `install-quality-gates` action,
-which replaced that repo's four separate `install-*-metric` actions.
+Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
+`install-quality-gates` action (which replaced four separate
+`install-*-metric` actions); that action's optional `version` input pins
+to a specific release tag instead of always floating on `latest`.
 
 ## Development
 

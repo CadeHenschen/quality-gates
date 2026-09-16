@@ -20,7 +20,12 @@ import (
 
 const usage = `usage:
   crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--json PATH]
-  crap-metric diff --old PATH --new PATH [--top N] [--json]`
+  crap-metric diff --old PATH --new PATH [--top N] [--json]
+  crap-metric version`
+
+// version is overridden at build time via -ldflags "-X main.version=...";
+// "dev" for a plain `go build`/`go run`.
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -39,6 +44,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runCheck(args[1:], stdout, stderr)
 	case "diff":
 		return runDiff(args[1:], stdout, stderr)
+	case "version":
+		fmt.Fprintln(stdout, "crap-metric", version)
+		return 0
 	default:
 		fmt.Fprintln(stderr, usage)
 		return 2

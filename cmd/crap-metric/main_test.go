@@ -68,6 +68,17 @@ func TestRunUsageError(t *testing.T) {
 	}
 }
 
+func TestRunVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"version"}, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("run([\"version\"]) exit code = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "crap-metric") {
+		t.Errorf("expected version output to mention crap-metric, got %q", stdout.String())
+	}
+}
+
 func TestRunMissingLang(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"check", "--dir", "."}, &stdout, &stderr)

@@ -56,20 +56,32 @@ jobs:
       - uses: https://code.forgejo.org/actions/checkout@v4
 
       - name: Build linux/amd64 and darwin/arm64 binaries
+        env:
+          SHA: ${{ github.sha }}
         # darwin/arm64 added alongside linux/amd64 for the mac-mini runner
         # (self-hosted, macos, Apple Silicon) — health-suite's Xcode-based
         # jobs run there and can't exec the linux/amd64 binaries. Plain
         # `go build` cross-compiles fine for both from this one Alpine
         # container; nothing OS-specific in this module needs cgo.
+        #
+        # -ldflags "-X main.version=..." bakes the same short SHA used for
+        # the release tag into each binary's `version` subcommand, same
+        # convention as gamectl's `-X main.version=$APP_VERSION`. Lets a
+        # consumer that pinned an install to an older release (see
+        # ci-workflows' install-quality-gates `version` input) confirm
+        # what it's actually running.
         run: |
-          GOOS=linux  GOARCH=amd64 go build -o crap-metric-linux-amd64     ./cmd/crap-metric
-          GOOS=linux  GOARCH=amd64 go build -o dupe-metric-linux-amd64     ./cmd/dupe-metric
-          GOOS=linux  GOARCH=amd64 go build -o escape-metric-linux-amd64   ./cmd/escape-metric
-          GOOS=linux  GOARCH=amd64 go build -o cycle-metric-linux-amd64    ./cmd/cycle-metric
-          GOOS=darwin GOARCH=arm64 go build -o crap-metric-darwin-arm64    ./cmd/crap-metric
-          GOOS=darwin GOARCH=arm64 go build -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
-          GOOS=darwin GOARCH=arm64 go build -o escape-metric-darwin-arm64  ./cmd/escape-metric
-          GOOS=darwin GOARCH=arm64 go build -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
+          TAG=${SHA:0:7}
+          LDFLAGS="-X main.version=$TAG"
+
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o crap-metric-linux-amd64     ./cmd/crap-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dupe-metric-linux-amd64     ./cmd/dupe-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o escape-metric-linux-amd64   ./cmd/escape-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o cycle-metric-linux-amd64    ./cmd/cycle-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o crap-metric-darwin-arm64    ./cmd/crap-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o escape-metric-darwin-arm64  ./cmd/escape-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
 
       - name: Create release and upload binaries
         env:
@@ -113,6 +125,34 @@ jobs:
             done
           done
 
+      - name: Delete releases beyond retention (keep newest 20)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Now that releases carry only distribution binaries — no report
+        # history hangs off them (see the self-check job's `reports`
+        # branch instead) — nothing needs them kept forever. `grep -o` on
+        # "tag_name" is safe against the array's single line of compact
+        # JSON: unlike "id" (which also appears nested under each
+        # release's author, the exact ambiguity the lookup-by-tag step
+        # above avoids by anchoring on `^{"id":`), "tag_name" only ever
+        # appears once per release object. Relies on this endpoint's
+        # newest-first order — the same assumption this repo's trend
+        # lookup used to rely on before it moved to the `reports` branch.
+        run: |
+          API="https://git.roost-r.com/api/v1/repos/cadeh/quality-gates"
+          TAGS=$(curl -sS -H "Authorization: token $TOKEN" "$API/releases?limit=100" \
+            | grep -o '"tag_name":"[^"]*"' | sed 's/"tag_name":"\(.*\)"/\1/')
+
+          KEEP=20
+          i=0
+          for OLDTAG in $TAGS; do
+            i=$((i + 1))
+            if [ "$i" -le "$KEEP" ]; then
+              continue
+            fi
+            curl -sS -X DELETE -H "Authorization: token $TOKEN" "$API/releases/tags/$OLDTAG"
+          done
+
   self-check:
     name: Quality gate self-checks
     runs-on: [self-hosted, roost-r]
@@ -121,10 +161,21 @@ jobs:
     container:
       image: golang:1.26-alpine
     steps:
-      - name: Install Node (checkout), curl (install action), Python (radon)
-        run: apk add --no-cache nodejs npm curl python3 py3-pip
+      # git + bash: git to read/advance the `reports` branch below (this
+      # job's git plumbing is written for sh, but roost-r-git-auth's own
+      # step is `shell: bash`); bash needed for that action to run inside
+      # this alpine container.
+      - name: Install Node (checkout), curl (install action), Python (radon), git+bash (reports branch)
+        run: apk add --no-cache nodejs npm curl python3 py3-pip git bash
 
       - uses: https://code.forgejo.org/actions/checkout@v4
+
+      # checkout@v4's own auth doesn't carry over to the separate git
+      # fetch/push of the `reports` branch further down this job.
+      - name: authenticate for reports-branch push
+        uses: http://forgejo:3000/cadeh/ci-workflows/actions/roost-r-git-auth@main
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Same reasoning as the "test" job: without these, crap-metric's own
       # Python/TypeScript analysis of *this repo* would silently see 0%
@@ -169,42 +220,22 @@ jobs:
 
       - name: Compare crap trend against previous report
         if: always()
-        # releases?limit=2 sorts newest-first; index 0 is this run's own
-        # release (already created by the "release" job above), index 1
-        # is the actual baseline. Explicit User-Agent on every request —
-        # this host's edge 403s Python urllib's default one specifically
-        # (see CLAUDE.md).
+        # Previous run's report now lives on a dedicated `reports` branch
+        # (see the "Advance reports branch" step below) instead of as a
+        # release asset — no Releases API pagination, no Python urllib +
+        # User-Agent workaround needed for this lookup at all.
         run: |
-          python3 - <<'PYEOF'
-          import json, urllib.request, sys
+          git fetch origin reports 2>/dev/null || true
 
-          UA = {"User-Agent": "quality-gates-ci/1.0"}
-
-          req = urllib.request.Request(
-              "https://git.roost-r.com/api/v1/repos/cadeh/quality-gates/releases?limit=2",
-              headers=UA,
-          )
-          with urllib.request.urlopen(req) as resp:
-              releases = json.load(resp)
-
-          if len(releases) < 2:
-              print("no previous release to compare against (first release)")
-              sys.exit(0)
-
-          prev = releases[1]
-          asset = next((a for a in prev.get("assets", []) if a["name"] == "crap-report.json"), None)
-          if asset is None:
-              print(f"previous release {prev['tag_name']} has no crap-report.json (predates this feature)")
-              sys.exit(0)
-
-          req = urllib.request.Request(asset["browser_download_url"], headers=UA)
-          with urllib.request.urlopen(req) as resp, open("prev-crap-report.json", "wb") as out:
-              out.write(resp.read())
-          print(f"comparing against {prev['tag_name']}")
-          PYEOF
+          if git rev-parse --verify origin/reports >/dev/null 2>&1; then
+            git show origin/reports:crap-report.json > prev-crap-report.json 2>/dev/null || true
+          fi
 
           if [ -f prev-crap-report.json ]; then
+            echo "comparing against reports branch tip"
             crap-metric diff --old prev-crap-report.json --new crap-report.json
+          else
+            echo "no previous report to compare against (first run, or reports branch predates this feature)"
           fi
 
       - name: Upload reports as workflow artifacts
@@ -217,22 +248,30 @@ jobs:
             dupe-report.json
             escape-report.json
 
-      - name: Attach crap-report.json to this run's release
+      - name: Advance reports branch with this run's report
         if: always()
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ github.sha }}
-        # So the *next* run's trend comparison has something to diff
-        # against. Best-effort: if the release job's tag lookup fails,
-        # skip silently rather than fail a job whose real gates already
-        # ran above.
+        # `reports` carries nothing but crap-report.json — one commit per
+        # self-check run — so the next run's trend comparison above always
+        # has a same-branch predecessor to read. Built in a separate git
+        # worktree so this step can't disturb the job's actual checkout
+        # (still needed as-is by later steps in this same job).
         run: |
           TAG=${SHA:0:7}
-          API="https://git.roost-r.com/api/v1/repos/cadeh/quality-gates"
-          ID=$(curl -sS -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" \
-            | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
-          if [ -n "$ID" ]; then
-            curl -sS -X POST -H "Authorization: token $TOKEN" \
-              -F "attachment=@crap-report.json" \
-              "$API/releases/$ID/assets?name=crap-report.json"
+          git config user.email "ci@roost-r.com"
+          git config user.name "quality-gates-ci"
+
+          rm -rf /tmp/reports-worktree
+          if git rev-parse --verify origin/reports >/dev/null 2>&1; then
+            git worktree add --detach /tmp/reports-worktree origin/reports
+          else
+            git worktree add --detach /tmp/reports-worktree
+            (cd /tmp/reports-worktree && git checkout --orphan reports)
           fi
+
+          cp crap-report.json /tmp/reports-worktree/crap-report.json
+          cd /tmp/reports-worktree || exit 1
+          git add crap-report.json
+          git commit --quiet -m "crap-report for $TAG"
+          git push origin HEAD:refs/heads/reports

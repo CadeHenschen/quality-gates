@@ -14,7 +14,13 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
 )
 
-const usage = "usage: escape-metric check --lang python|go|ts --dir DIR [--fail-above RATE] [--top N] [--only-files PATH] [--json PATH]"
+const usage = `usage:
+  escape-metric check --lang python|go|ts --dir DIR [--fail-above RATE] [--top N] [--only-files PATH] [--json PATH]
+  escape-metric version`
+
+// version is overridden at build time via -ldflags "-X main.version=...";
+// "dev" for a plain `go build`/`go run`.
+var version = "dev"
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -23,7 +29,15 @@ func main() {
 // run implements the CLI without touching process state, so it's directly
 // testable.
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 1 || args[0] != "check" {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, usage)
+		return 2
+	}
+	if args[0] == "version" {
+		fmt.Fprintln(stdout, "escape-metric", version)
+		return 0
+	}
+	if args[0] != "check" {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
