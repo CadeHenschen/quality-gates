@@ -12,3 +12,8 @@ export function withEslintDisable() {
   // eslint-disable-next-line no-console
   console.log("noisy");
 }
+
+// @ts-nocheck
+export function withTsNocheck(x: string): number {
+  return x;
+}

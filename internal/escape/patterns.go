@@ -40,6 +40,10 @@ var languages = map[string]LanguagePatterns{
 		Patterns: []Pattern{
 			{Name: "nolint", Regex: regexp.MustCompile(`//\s*nolint\b`)},
 			{Name: "discarded-result", Regex: regexp.MustCompile(`^\s*_\s*=\s*\w+(\.\w+)*\([^)]*\)\s*$`)},
+			// gosec's own suppression directive, distinct from nolint (which
+			// covers golangci-lint, of which gosec is often just one linter
+			// among many — a bare "#nosec" skips gosec directly).
+			{Name: "nosec", Regex: regexp.MustCompile(`//\s*#nosec\b`)},
 		},
 	},
 	"python": {
@@ -49,6 +53,7 @@ var languages = map[string]LanguagePatterns{
 			{Name: "type-ignore", Regex: regexp.MustCompile(`#\s*type:\s*ignore\b`)},
 			{Name: "noqa", Regex: regexp.MustCompile(`#\s*noqa\b`)},
 			{Name: "bare-except", Regex: regexp.MustCompile(`^\s*except\s*:\s*$`)},
+			{Name: "pylint-disable", Regex: regexp.MustCompile(`#\s*pylint:\s*disable\b`)},
 		},
 	},
 	"ts": {
@@ -57,6 +62,7 @@ var languages = map[string]LanguagePatterns{
 		Patterns: []Pattern{
 			{Name: "ts-ignore", Regex: regexp.MustCompile(`//\s*@ts-ignore\b`)},
 			{Name: "ts-expect-error", Regex: regexp.MustCompile(`//\s*@ts-expect-error\b`)},
+			{Name: "ts-nocheck", Regex: regexp.MustCompile(`//\s*@ts-nocheck\b`)},
 			{Name: "eslint-disable", Regex: regexp.MustCompile(`//\s*eslint-disable`)},
 		},
 	},

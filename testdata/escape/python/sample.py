@@ -18,3 +18,8 @@ def with_bare_except():
         risky()
     except:
         pass
+
+
+def with_pylint_disable(x):
+    eval(x)  # pylint: disable=eval-used
+    return x

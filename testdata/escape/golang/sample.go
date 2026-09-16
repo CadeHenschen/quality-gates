@@ -14,3 +14,7 @@ func WithNolint(x int) int {
 func WithDiscardedResult() {
 	_ = fmt.Sprintf("hi")
 }
+
+func WithNosec(cmd string) {
+	fmt.Println(cmd) // #nosec G204
+}

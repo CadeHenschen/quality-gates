@@ -29,6 +29,9 @@ func TestScanGoFixture(t *testing.T) {
 	if byPattern["discarded-result"] != 1 {
 		t.Errorf("discarded-result count = %d, want 1: %+v", byPattern["discarded-result"], result.Hatches)
 	}
+	if byPattern["nosec"] != 1 {
+		t.Errorf("nosec count = %d, want 1: %+v", byPattern["nosec"], result.Hatches)
+	}
 }
 
 func TestScanPythonFixture(t *testing.T) {
@@ -41,7 +44,7 @@ func TestScanPythonFixture(t *testing.T) {
 	for _, h := range result.Hatches {
 		byPattern[h.Pattern]++
 	}
-	for _, want := range []string{"type-ignore", "noqa", "bare-except"} {
+	for _, want := range []string{"type-ignore", "noqa", "bare-except", "pylint-disable"} {
 		if byPattern[want] != 1 {
 			t.Errorf("%s count = %d, want 1: %+v", want, byPattern[want], result.Hatches)
 		}
@@ -58,7 +61,7 @@ func TestScanTypescriptFixture(t *testing.T) {
 	for _, h := range result.Hatches {
 		byPattern[h.Pattern]++
 	}
-	for _, want := range []string{"ts-ignore", "eslint-disable"} {
+	for _, want := range []string{"ts-ignore", "eslint-disable", "ts-nocheck"} {
 		if byPattern[want] != 1 {
 			t.Errorf("%s count = %d, want 1: %+v", want, byPattern[want], result.Hatches)
 		}
