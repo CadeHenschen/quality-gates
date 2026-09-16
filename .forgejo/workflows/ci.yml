@@ -267,7 +267,11 @@ jobs:
             git worktree add --detach /tmp/reports-worktree origin/reports
           else
             git worktree add --detach /tmp/reports-worktree
-            (cd /tmp/reports-worktree && git checkout --orphan reports)
+            # --orphan repoints the branch but leaves the checked-out main
+            # tree (including .gitignore, which ignores crap-report.json)
+            # in place, so `git add crap-report.json` below would be
+            # refused as ignored. Clear it so the orphan tree starts empty.
+            (cd /tmp/reports-worktree && git checkout --orphan reports && git rm -rf --quiet .)
           fi
 
           cp crap-report.json /tmp/reports-worktree/crap-report.json
