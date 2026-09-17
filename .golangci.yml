@@ -1,0 +1,20 @@
+version: "2"
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        # Every one of these four CLIs writes its human-readable report
+        # straight to stdout/stderr via fmt.Fprint(f|ln) — dozens of call
+        # sites, all the same shape. If the write itself is failing, the
+        # process is already unable to report anything useful about it,
+        # so checking the return value adds no real safety, only noise.
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Same reasoning for read-only file handles opened, read, and
+        # closed within one function: a failed Close on a file that was
+        # only ever read from doesn't lose data, so there's nothing
+        # actionable to do with the error. Same for best-effort temp-file
+        # cleanup — a failed os.Remove leaves a stray file in the OS temp
+        # dir, not a correctness problem for the tool itself.
+        - (*os.File).Close
+        - os.Remove

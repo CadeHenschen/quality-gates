@@ -42,10 +42,48 @@ jobs:
           go vet ./...
           go test ./... -v
 
+  # No `needs:` — runs in parallel with `test` (this runner has 4
+  # concurrent job slots, not 1). golangci-lint doesn't need the
+  # radon/npm fixture deps `test` installs to exercise the analyzers —
+  # just Node for checkout and the Go toolchain already in this image.
+  lint:
+    name: Lint
+    runs-on: [self-hosted, roost-r]
+    container:
+      image: golang:1.26-alpine
+    steps:
+      # curl is needed by install-golangci-lint's own download step, not
+      # just checkout — the alpine base image has neither by default.
+      - name: Install Node (required by actions/checkout), curl (release download)
+        run: apk add --no-cache nodejs curl
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      - uses: http://forgejo:3000/cadeh/ci-workflows/actions/install-golangci-lint@main
+
+      - name: golangci-lint
+        run: golangci-lint run ./...
+
+  lint-workflows:
+    name: Lint workflow files
+    runs-on: [self-hosted, roost-r]
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      - uses: http://forgejo:3000/cadeh/ci-workflows/actions/install-actionlint@main
+
+      # -ignore: actionlint's `action` rule only understands GitHub's
+      # {owner}/{repo}@{ref} shorthand, not Forgejo's full-URL `uses:`
+      # syntax used everywhere in this file — every other rule (invalid
+      # expressions, unknown context vars, embedded shellcheck on `run:`
+      # blocks, empty `jobs:`, etc.) still applies.
+      - name: actionlint
+        run: actionlint -config-file .forgejo/actionlint.yaml -ignore 'specifying action .* in invalid format' .forgejo/workflows/*.yml
+
   release:
     name: Release binaries
     runs-on: [self-hosted, roost-r]
-    needs: [test]
+    needs: [test, lint, lint-workflows]
     if: github.ref == 'refs/heads/main'
     container:
       image: golang:1.26-alpine

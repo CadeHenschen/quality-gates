@@ -461,18 +461,18 @@ func (l *lexer) scanInString() {
 
 func (l *lexer) scanInInterp() {
 	top := &l.frames[len(l.frames)-1]
-	switch c := l.src[l.pos]; {
-	case c == '\n':
+	switch c := l.src[l.pos]; c {
+	case '\n':
 		l.line++
 		l.pos++
-	case c == '"' || c == '#':
+	case '"', '#':
 		if !l.tryStartString() {
 			l.pos++
 		}
-	case c == '(' || c == '[' || c == '{':
+	case '(', '[', '{':
 		top.depth++
 		l.pos++
-	case c == ')' || c == ']' || c == '}':
+	case ')', ']', '}':
 		top.depth--
 		l.pos++
 		if top.depth == 0 {

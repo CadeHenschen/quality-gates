@@ -44,8 +44,8 @@ func MergeLineRanges(lines []int) []LineRange {
 	var out []LineRange
 	start, end := sorted[0], sorted[0]
 	for _, l := range sorted[1:] {
-		switch {
-		case l == end || l == end+1:
+		switch l {
+		case end, end + 1:
 			end = l
 		default:
 			out = append(out, LineRange{Start: start, End: end})
