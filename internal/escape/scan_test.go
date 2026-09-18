@@ -68,6 +68,55 @@ func TestScanTypescriptFixture(t *testing.T) {
 	}
 }
 
+// TestScanJavaScriptFixture verifies the "ts" language block's patterns
+// also match plain .js files — patterns.go already lists .js/.jsx in its
+// Extensions, and Scan walks generically off that list, so this should
+// already pass; it's here to prove that's actually true, not just assumed
+// from reading the extension list.
+func TestScanJavaScriptFixture(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "sample.js", "export function clean(x) {\n  return x * 2;\n}\n\nexport function withEslintDisable() {\n  // eslint-disable-next-line no-console\n  console.log(\"noisy\");\n}\n")
+
+	result, err := Scan(Options{Dir: dir, Lang: "js"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	byPattern := map[string]int{}
+	for _, h := range result.Hatches {
+		byPattern[h.Pattern]++
+	}
+	if byPattern["eslint-disable"] != 1 {
+		t.Errorf("eslint-disable count = %d, want 1: %+v", byPattern["eslint-disable"], result.Hatches)
+	}
+}
+
+// TestScanSkipsJavaScriptTestFiles verifies .test.js/.spec.js (and their
+// .jsx variants) are excluded the same way .test.ts/.spec.ts already are —
+// the "ts" block's TestSuffixes historically only listed the TS variants,
+// so a JS test file's suppression comments would count as real code
+// instead of being skipped, unlike an equivalent TS test file. See
+// CLAUDE.md.
+func TestScanSkipsJavaScriptTestFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "real.js", "export function clean(x) {\n  return x * 2;\n}\n")
+	writeFile(t, dir, "real.test.js", "// eslint-disable-next-line no-console\nconsole.log(\"noisy\");\n")
+	writeFile(t, dir, "real.spec.jsx", "// eslint-disable-next-line no-console\nconsole.log(\"noisy\");\n")
+
+	result, err := Scan(Options{Dir: dir, Lang: "js"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, h := range result.Hatches {
+		if h.File == "real.test.js" || h.File == "real.spec.jsx" {
+			t.Errorf("JS/JSX test file should have been skipped, got hatch from it: %+v", h)
+		}
+	}
+	if _, ok := result.LinesByFile["real.test.js"]; ok {
+		t.Errorf("real.test.js should have been excluded from LinesByFile, got: %v", result.LinesByFile)
+	}
+}
+
 func TestScanSwiftFixture(t *testing.T) {
 	result, err := Scan(Options{Dir: "../../testdata/escape/swift", Lang: "swift"})
 	if err != nil {

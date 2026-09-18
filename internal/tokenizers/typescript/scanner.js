@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-// Walks a directory's .ts/.tsx source (skipping node_modules, dotdirs,
-// .d.ts, and *.test.ts/*.spec.ts) and prints one JSON object per file to
-// stdout: {"file": ..., "tokens": [{"text": ..., "line": ...}, ...]}.
+// Walks a directory's .ts/.tsx/.js/.jsx source (skipping node_modules,
+// dotdirs, .d.ts, and *.test.*/*.spec.*) and prints one JSON object per
+// file to stdout: {"file": ..., "tokens": [{"text": ..., "line": ...}, ...]}.
 // Tokenizes via the *target* repo's own installed `typescript` package's
 // scanner (classic API — same resolution + TS7 fallback as crap-metric's
 // complexity.js; see that repo's CLAUDE.md for why the fallback exists).
+// The scanner only distinguishes JSX-vs-not (not TS-vs-JS), so this same
+// scanner already tokenizes plain .js/.jsx correctly once walked — see
+// CLAUDE.md for why a JS-only target repo still needs `typescript`
+// installed purely to get this scanner.
 'use strict';
 
 const path = require('path');
@@ -47,9 +51,9 @@ function walk(d, out) {
     if (entry.isDirectory()) {
       walk(full, out);
     } else if (
-      /\.(ts|tsx)$/.test(entry.name) &&
+      /\.(ts|tsx|js|jsx)$/.test(entry.name) &&
       !/\.d\.ts$/.test(entry.name) &&
-      !/\.(test|spec)\.(ts|tsx)$/.test(entry.name)
+      !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(entry.name)
     ) {
       out.push(full);
     }

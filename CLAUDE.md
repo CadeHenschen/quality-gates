@@ -257,6 +257,47 @@ subprocess entirely and parse TS natively, matching the Go
 adapters' own approach — worth checking for when 7.1 lands, not assumed
 to exist yet.
 
+## `--lang js` was accepted and documented for months before it worked
+
+All four tools' `--lang` switch statements have mapped `js`/`javascript`
+to the same adapter as `ts`/`typescript` since early on, and README said
+so ("All four support ... `ts`/`typescript`/`js`"). For escape-metric and
+cycle-metric that was true: `patterns.go`'s `ts` block already listed
+`.js`/`.jsx` in `Extensions`, and the TS importer's `codeExtensions`
+already included them too, both being generic over the extension list
+with no TS-specific logic. For crap-metric and dupe-metric it wasn't:
+`complexity.js`'s and `scanner.js`'s own `walk()` functions matched only
+`/\.(ts|tsx)$/`, so `--lang js` against a pure-JS directory silently
+walked zero files and reported empty, every time — no error, just a
+gate that could never fail.
+
+The reason it went unnoticed: `cmd/*/main_test.go`'s dispatch tests
+(`"js": "typescript.Analyzer"` etc.) only assert the flag resolves to
+the right Go adapter *type* — they can't see into the embedded Node
+script at all, so they stayed green through the whole time `--lang js`
+was broken. Fixed by extending both scripts' `walk()` regex to
+`.ts|.tsx|.js|.jsx` (plus matching `.test./.spec.` exclusions) and
+replacing complexity.js's `file.endsWith('x') ? TSX : TS` heuristic with
+an explicit per-extension `ScriptKind` map — TSX happened to parse plain
+`.jsx` well enough that the heuristic wasn't caught by types, only by
+adding real fixtures. `testdata/{crap,dupe}/javascript`,
+`testdata/cycle/javascript`, and JS fixtures folded into
+`testdata/escape/typescript` now exercise every adapter's actual JS path
+end to end, not just its dispatch switch. Escape-metric's `TestSuffixes`
+had the same class of gap in miniature — `.test.ts`/`.spec.ts` were
+excluded but `.test.js`/`.spec.js` weren't, so a JS test file's
+suppression comments counted as real code unlike an equivalent TS one;
+fixed alongside the rest.
+
+The lesson for a future language or extension added to an existing
+adapter: a dispatch-switch test proves the CLI *routes* to the right
+adapter, never that the adapter's own file-matching was updated to
+actually handle it. Add a real fixture and an end-to-end test for the
+new extension specifically, the same way `typescript-ts7`'s fixture
+exists for the TS7 fallback path above it — don't trust the alias
+existing in three places (the switch, the alias map, the README table)
+to mean the fourth (the actual walk) was updated too.
+
 ## CI self-checks this repo — keep it passing for real
 
 `.forgejo/workflows/ci.yml`'s self-check jobs run crap-metric/

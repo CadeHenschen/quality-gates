@@ -59,6 +59,47 @@ func TestTokenizeRealFixture(t *testing.T) {
 	}
 }
 
+// TestTokenizeJavaScript verifies scanner.js walks plain .js and .jsx
+// files, not just .ts/.tsx — the walk() regex historically only matched
+// .ts/.tsx, so --lang js silently tokenized nothing despite the CLI
+// accepting and dispatching it. See CLAUDE.md.
+func TestTokenizeJavaScript(t *testing.T) {
+	skipIfNoNode(t)
+	dir := "../../../testdata/dupe/javascript"
+	skipIfFixtureNotInstalled(t, dir)
+
+	files, err := Tokenizer{}.Tokenize(tokenizers.Options{Dir: dir})
+	if err != nil {
+		t.Fatalf("Tokenize: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("got %d files, want 2 (sample.js, sample.jsx): %+v", len(files), files)
+	}
+
+	tokensByFile := map[string]int{}
+	var jsCounts map[string]int
+	for _, f := range files {
+		tokensByFile[f.File] = len(f.Tokens)
+		if f.File == "sample.js" {
+			jsCounts = map[string]int{}
+			for _, tok := range f.Tokens {
+				jsCounts[tok.Text]++
+			}
+		}
+	}
+	if tokensByFile["sample.js"] == 0 {
+		t.Errorf("sample.js produced no tokens: %+v", files)
+	}
+	if tokensByFile["sample.jsx"] == 0 {
+		t.Errorf("sample.jsx produced no tokens (JSX language variant not applied?): %+v", files)
+	}
+	// The .js fixture's two duplicate functions should each contribute a
+	// "total" and a "for" from their identical bodies.
+	if jsCounts["total"] < 2 || jsCounts["for"] < 2 {
+		t.Errorf("expected repeated tokens from sample.js's duplicate functions, got counts: %+v", jsCounts)
+	}
+}
+
 func TestTokenizeFallsBackToTypescript6ForTS7(t *testing.T) {
 	skipIfNoNode(t)
 	dir := "../../../testdata/dupe/typescript-ts7"

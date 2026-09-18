@@ -58,7 +58,7 @@ var languages = map[string]LanguagePatterns{
 	},
 	"ts": {
 		Extensions:   []string{".ts", ".tsx", ".js", ".jsx"},
-		TestSuffixes: []string{".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"},
+		TestSuffixes: []string{".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx", ".test.js", ".test.jsx", ".spec.js", ".spec.jsx"},
 		Patterns: []Pattern{
 			{Name: "ts-ignore", Regex: regexp.MustCompile(`//\s*@ts-ignore\b`)},
 			{Name: "ts-expect-error", Regex: regexp.MustCompile(`//\s*@ts-expect-error\b`)},

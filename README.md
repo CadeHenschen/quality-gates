@@ -90,10 +90,14 @@ doesn't run tests itself:
 - **TypeScript/JS**: `vitest run --coverage` (or `jest --coverage`) →
   pass the resulting `coverage/coverage-final.json`. Complexity comes
   from an embedded Node script using the *target repo's own* installed
-  `typescript` package (classic compiler API). TypeScript 7 drops that
-  API from its main entry point — the script falls back to Microsoft's
-  official `@typescript/typescript6` compat package if present. See
-  CLAUDE.md for the full TS7 story.
+  `typescript` package (classic compiler API), for `.ts`/`.tsx` **and**
+  plain `.js`/`.jsx` — TypeScript's parser reads JS natively, so a
+  JS-only repo needs `typescript` (or the TS7 fallback below) as a
+  devDependency too, purely to get that parser; nothing else is
+  required, no `tsconfig.json` or actual TS usage. TypeScript 7 drops
+  that API from its main entry point — the script falls back to
+  Microsoft's official `@typescript/typescript6` compat package if
+  present. See CLAUDE.md for the full TS7 story.
 - **Swift**: `swift test --enable-code-coverage` then
   `llvm-cov export -format=lcov <test binary> -instr-profile <profdata>`
   → pass the resulting `.lcov` file. Complexity is computed natively via
@@ -119,8 +123,9 @@ Node script against the target repo's own `typescript` package's scanner
 — same TS7 fallback as crap-metric.
 
 Both tools skip comments and test files (`*_test.go`, `test_*.py`/
-`*_test.py`, `*.test.ts`/`*.spec.ts`) — duplicate/suppressed test
-boilerplate is common and isn't the kind of finding these gates are for.
+`*_test.py`, `*.test.ts`/`*.spec.ts`, `*.test.js`/`*.spec.js` and their
+`.tsx`/`.jsx` variants) — duplicate/suppressed test boilerplate is
+common and isn't the kind of finding these gates are for.
 
 ### cycle-metric: import resolution
 
@@ -146,10 +151,10 @@ internal/
   escape/
   cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
 testdata/
-  crap/{golang,python,typescript,typescript-ts7,swift}/
-  dupe/{golang,python,typescript,typescript-ts7,swift}/
-  escape/{golang,python,typescript,swift}/
-  cycle/{python,typescript}/
+  crap/{golang,python,typescript,typescript-ts7,javascript,swift}/
+  dupe/{golang,python,typescript,typescript-ts7,javascript,swift}/
+  escape/{golang,python,typescript,swift}/    # .js/.jsx fixtures live alongside typescript's — same "ts" language block
+  cycle/{python,typescript,javascript}/
 ```
 
 Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`) and
@@ -195,7 +200,8 @@ go test ./...
 
 The analyzer/tokenizer tests exercise the real underlying tools, not
 mocks — `radon` and `coverage` (Python, for crap-metric) and `node` +
-`typescript` (in each `testdata/{crap,dupe}/typescript{,-ts7}/node_modules`,
+`typescript` (in each
+`testdata/{crap,dupe}/{typescript{,-ts7},javascript}/node_modules`,
 `npm install` there if missing) need to be available locally to run the
 full suite. `python3` alone (stdlib `tokenize`, no pip package) covers
 dupe-metric's and cycle-metric's Python fixtures. Swift needs nothing

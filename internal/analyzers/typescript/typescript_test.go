@@ -133,6 +133,49 @@ func TestAnalyzeComplexityAndCoverage(t *testing.T) {
 	}
 }
 
+// TestAnalyzeJavaScript verifies complexity.js walks and correctly
+// ScriptKind-tags plain .js and .jsx files, not just .ts/.tsx — the walk()
+// regex historically only matched .ts/.tsx, so --lang js silently analyzed
+// nothing despite the CLI accepting and dispatching it. See CLAUDE.md.
+func TestAnalyzeJavaScript(t *testing.T) {
+	skipIfNoNode(t)
+
+	dir := "../../../testdata/crap/javascript"
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(absDir, "node_modules", "typescript")); err != nil {
+		t.Skip("testdata/crap/javascript has no installed typescript package — run `npm install` there")
+	}
+
+	fns, err := Analyzer{}.Analyze(analyzers.Options{Dir: dir})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	byName := map[string]crap.Function{}
+	for _, f := range fns {
+		byName[f.Name] = f
+	}
+
+	if got, ok := byName["simple"]; !ok {
+		t.Errorf("simple (.js) not found among %+v", fns)
+	} else if got.Complexity != 1 {
+		t.Errorf("simple (.js) complexity = %d, want 1", got.Complexity)
+	}
+	if got, ok := byName["branchy"]; !ok {
+		t.Errorf("branchy (.js) not found among %+v", fns)
+	} else if got.Complexity != 2 {
+		t.Errorf("branchy (.js) complexity = %d, want 2", got.Complexity)
+	}
+	if got, ok := byName["Widget"]; !ok {
+		t.Errorf("Widget (.jsx) not found among %+v", fns)
+	} else if got.Complexity != 2 {
+		t.Errorf("Widget (.jsx) complexity = %d, want 2", got.Complexity)
+	}
+}
+
 // TestAnalyzeFallsBackToTypescript6ForTS7 verifies complexity.js's fallback
 // to the official @typescript/typescript6 compat package when the target
 // repo's installed `typescript` is v7+ and has no classic compiler API —

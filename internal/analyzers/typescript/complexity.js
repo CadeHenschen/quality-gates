@@ -1,10 +1,15 @@
 #!/usr/bin/env node
-// Walks a directory's .ts/.tsx source (skipping node_modules, dotdirs,
-// .d.ts, and *.test.ts/*.spec.ts) and prints one JSON object per
+// Walks a directory's .ts/.tsx/.js/.jsx source (skipping node_modules,
+// dotdirs, .d.ts, and *.test.*/*.spec.*) and prints one JSON object per
 // function/method/arrow-function to stdout, with cyclomatic complexity and
 // its line range. Requires the *target* repo's own installed `typescript`
 // package (resolved via require.resolve with the target dir in the search
-// path) — crap-metric doesn't bundle or install TypeScript itself.
+// path) — crap-metric doesn't bundle or install TypeScript itself. This
+// also backs plain-JavaScript analysis: TypeScript's classic parser reads
+// .js/.jsx natively (the same engine editors use for JS IntelliSense), so
+// a JS-only target repo still needs `typescript` (or the TS7 compat
+// package below) as a devDependency purely to get that parser — see
+// README/CLAUDE.md.
 'use strict';
 
 const path = require('path');
@@ -61,9 +66,9 @@ function walk(d, out) {
     if (entry.isDirectory()) {
       walk(full, out);
     } else if (
-      /\.(ts|tsx)$/.test(entry.name) &&
+      /\.(ts|tsx|js|jsx)$/.test(entry.name) &&
       !/\.d\.ts$/.test(entry.name) &&
-      !/\.(test|spec)\.(ts|tsx)$/.test(entry.name)
+      !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(entry.name)
     ) {
       out.push(full);
     }
@@ -111,6 +116,13 @@ function nameOf(node, sourceFile) {
   return '<anonymous>';
 }
 
+const scriptKindByExt = {
+  '.ts': ts.ScriptKind.TS,
+  '.tsx': ts.ScriptKind.TSX,
+  '.js': ts.ScriptKind.JS,
+  '.jsx': ts.ScriptKind.JSX,
+};
+
 const files = [];
 walk(dir, files);
 
@@ -122,7 +134,7 @@ for (const file of files) {
     text,
     ts.ScriptTarget.Latest,
     true,
-    file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    scriptKindByExt[path.extname(file)]
   );
 
   (function visit(node) {

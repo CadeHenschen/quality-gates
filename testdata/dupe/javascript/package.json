@@ -1,0 +1,8 @@
+{
+  "name": "dupe-metric-testdata-javascript",
+  "private": true,
+  "description": "Fixture package so internal/tokenizers/typescript's tests can resolve a real installed `typescript` (classic compiler API, 4.x/5.x) to tokenize plain JavaScript, the same way a target JS-only repo would.",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}
