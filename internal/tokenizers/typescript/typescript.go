@@ -7,6 +7,7 @@ import (
 	_ "embed"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/dupe"
+	"git.roost-r.com/cadeh/quality-gates/internal/embedscript"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers"
 )
 
@@ -17,7 +18,7 @@ type Tokenizer struct{}
 
 func (Tokenizer) Tokenize(opts tokenizers.Options) ([]dupe.FileTokens, error) {
 	var raw []tokenizers.RawFileTokens
-	if err := tokenizers.RunEmbeddedScript("node", scannerScript, ".js", opts.Dir, &raw); err != nil {
+	if err := embedscript.Run("node", scannerScript, ".js", opts.Dir, &raw); err != nil {
 		return nil, err
 	}
 	return tokenizers.ToFileTokens(raw), nil

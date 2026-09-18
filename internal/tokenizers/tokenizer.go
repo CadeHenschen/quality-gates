@@ -1,17 +1,14 @@
 // Package tokenizers defines the common interface each language tokenizer
-// implements to produce normalized dupe.FileTokens, plus the shared
-// machinery (RunEmbeddedScript, RawFileTokens/ToFileTokens) the Python and
-// TypeScript tokenizers both need for "run an embedded script, parse its
-// JSON" — factored out after dupe-metric's own self-check flagged those
-// two tokenizers as ~90% duplicated (see CLAUDE.md).
+// implements to produce normalized dupe.FileTokens, plus the shared wire
+// shape (RawFileTokens/ToFileTokens) the Python and TypeScript tokenizers
+// both need for "run an embedded script, parse its JSON" — factored out
+// after dupe-metric's own self-check flagged those two tokenizers as ~90%
+// duplicated (see CLAUDE.md). The "run an embedded script" machinery
+// itself lives in internal/embedscript, shared with the TypeScript
+// complexity analyzer too.
 package tokenizers
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
-
 	"git.roost-r.com/cadeh/quality-gates/internal/dupe"
 )
 
@@ -50,37 +47,4 @@ func ToFileTokens(raw []RawFileTokens) []dupe.FileTokens {
 		result = append(result, dupe.FileTokens{File: f.File, Tokens: toks})
 	}
 	return result
-}
-
-// RunEmbeddedScript writes scriptContent to a temp file (suffixed ext, so
-// the interpreter recognizes the file type), runs
-// `interpreter <tempfile> dir`, and unmarshals its JSON stdout into out.
-func RunEmbeddedScript(interpreter string, scriptContent []byte, ext, dir string, out any) error {
-	tmp, err := os.CreateTemp("", "dupe-metric-script-*"+ext)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := tmp.Write(scriptContent); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	cmd := exec.Command(interpreter, tmp.Name(), dir)
-	stdout, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("%s script failed: %w: %s", interpreter, err, exitErr.Stderr)
-		}
-		return fmt.Errorf("run %s (is it installed?): %w", interpreter, err)
-	}
-
-	if err := json.Unmarshal(stdout, out); err != nil {
-		return fmt.Errorf("parse %s script output: %w", interpreter, err)
-	}
-	return nil
 }

@@ -57,6 +57,20 @@ denominator (using the whole-repo total would dilute a small change's
 hatches into a rate too tiny to ever trip `--fail-above`), a
 `cycle.Cycle` counts as touched if *any* file in it matches.
 
+**Known limitation**: the suffix match has no path-boundary awareness
+beyond "preceded by `/`" — it can't tell two files with the same leaf
+name apart if one is a real path-boundary suffix of the other. A changed
+file `web/src/index.ts` will match an item's `File: "index.ts"` even if
+that item actually came from a completely unrelated `admin/index.ts`.
+This is unlikely to matter for a distinctive filename, but a repo with
+many same-named leaves (`index.ts`, `__init__.py`, `utils.go` across
+several packages) should expect occasional false-positive ratchet
+inclusion — an untouched hotspot gating the build because some other,
+unrelated file with the same name was actually the one that changed. Not
+currently worth the complexity of resolving both sides to full
+repo-relative paths for what's, in practice, a rare and only-ever-extra
+(never missed) inclusion.
+
 In CI, the changed-file list itself comes from `ci-workflows`'
 `compute-changed-files` action (a `git diff` against the PR base or the
 previous push's `before` SHA) — see that repo's README for what it

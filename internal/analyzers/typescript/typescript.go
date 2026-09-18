@@ -10,11 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
+	"git.roost-r.com/cadeh/quality-gates/internal/embedscript"
 )
 
 //go:embed complexity.js
@@ -42,29 +42,14 @@ type istanbulFile struct {
 }
 
 func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
-	scriptPath, cleanup, err := writeScript()
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
 	absDir, err := filepath.Abs(opts.Dir)
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command("node", scriptPath, absDir)
-	out, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("complexity.js failed: %w: %s", err, exitErr.Stderr)
-		}
-		return nil, fmt.Errorf("run node (is it installed?): %w", err)
-	}
-
 	var fns []jsFunction
-	if err := json.Unmarshal(out, &fns); err != nil {
-		return nil, fmt.Errorf("parse complexity.js output: %w", err)
+	if err := embedscript.Run("node", complexityScript, ".js", absDir, &fns); err != nil {
+		return nil, err
 	}
 
 	coverage := map[string]istanbulFile{}
@@ -113,21 +98,4 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		})
 	}
 	return out2, nil
-}
-
-func writeScript() (path string, cleanup func(), err error) {
-	tmp, err := os.CreateTemp("", "crap-metric-complexity-*.js")
-	if err != nil {
-		return "", nil, err
-	}
-	if _, err := tmp.Write(complexityScript); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return "", nil, err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return "", nil, err
-	}
-	return tmp.Name(), func() { os.Remove(tmp.Name()) }, nil
 }
