@@ -1,7 +1,7 @@
 # quality-gates
 
-Four CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
-**escape-metric**, and **cycle-metric**. Each answers a different
+Five CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
+**escape-metric**, **cycle-metric**, and **test-metric**. Each answers a different
 question about a change, with a deliberately different, appropriately-
 scoped detection method — but they share enough (the `--only-files`
 ratchet mechanism, the CI/release plumbing, the install pattern) that
@@ -9,7 +9,7 @@ running them as four separate repos meant four copies of that shared
 logic drifting independently. Migrated into one module for exactly that
 reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 
-## The four gates
+## The five gates
 
 | Binary | Question | Method | Default gate |
 |---|---|---|---|
@@ -17,9 +17,11 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
+| `test-metric` | Can these tests actually fail? | `check`: parses test files for tests with no assertions, skips, `.only`, mock-only assertions, leaked temp dirs. `mutation`: gates on a mutation tool's score | `check --fail-above 0` (findings); `mutation --fail-below 60` (%) |
 
-All four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
+The first four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
 `dupe-metric`, and `escape-metric` also support `go` and `swift`.
+`test-metric check` supports all four (`go`, `python`, `ts`/`js`, `swift`).
 `cycle-metric` deliberately excludes both: Go's compiler already refuses
 to build a package-import cycle, so a detector for it would always
 report zero; Swift files within one module never import each other at
@@ -33,7 +35,7 @@ method.
 
 ## Ratcheting: `--only-files`
 
-All four `check` commands accept `--only-files PATH`, pointing at a
+Every `check` command (and `test-metric mutation`) accepts `--only-files PATH`, pointing at a
 newline-separated changed-file list (e.g. `git diff --name-only`). This
 computes a **second**, scoped gate verdict from only the items touching
 those files — the full, unfiltered report is always still printed and
@@ -55,7 +57,11 @@ directly, a `dupe.Clone` counts as touched if *either* side matches, an
 `escape.Hatch`'s scoped rate needs its own touched-files-only line-count
 denominator (using the whole-repo total would dilute a small change's
 hatches into a rate too tiny to ever trip `--fail-above`), a
-`cycle.Cycle` counts as touched if *any* file in it matches.
+`cycle.Cycle` counts as touched if *any* file in it matches, `test-metric
+check` re-analyzes just the touched files' tests, and `test-metric
+mutation` re-scores just the touched files' mutants (numerator and
+denominator both come from the mutant list, so there's no separate
+denominator to scope).
 
 **Known limitation**: the suffix match has no path-boundary awareness
 beyond "preceded by `/`" — it can't tell two files with the same leaf
@@ -84,6 +90,8 @@ crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--only-files PATH] [--json PATH]
+test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--only-files PATH] [--json PATH]
 <any tool>    version
 ```
 
@@ -191,23 +199,104 @@ tests could hide a real tangle. Every cycle's report includes both the
 full set of files involved and a reconstructed concrete `Chain` — a
 literal path back to its own start, not just an unordered set.
 
+### test-metric: are the tests any good?
+
+Coverage says a line *ran*; it can't say anything *checked* the result. A
+test that calls a function and asserts nothing scores the same as a good
+one. test-metric grades the tests themselves, in two independent gates.
+
+#### `test-metric check` — static findings
+
+Parses each language's test files (`*_test.go`; `test_*.py`/`*_test.py`;
+`*.test.*`/`*.spec.*` for TS/JS; XCTest `func test…()` and Swift Testing `@Test`
+for Swift) and reports, per test:
+
+| Check | Fires when |
+|---|---|
+| `no-assertions` | the test makes zero assertions, so it can't fail on wrong behavior |
+| `low-assertions` | fewer than `--min-assertions` (default 1, so off unless raised) |
+| `interaction-only` | *every* assertion only verifies a mock/spy was called (`toHaveBeenCalled`, `assert_called_once`, testify `AssertCalled`) — the test pins the implementation, nothing checks a return value or resulting state |
+| `skipped` | unconditionally skipped: `t.Skip` outside any `if`/`switch`, `@pytest.mark.skip`, `@unittest.skip`, `pytest.skip()`, `it.skip`/`xit`/`it.todo`/`describe.skip`. Conditional skips (`skipif`, `test.skipIf`, a `t.Skip` inside an `if`) are environment guards and never fire |
+| `focused` | `.only`, `fit`, `fdescribe` — silently disables every other test in the run |
+| `expected-failure` | `@pytest.mark.xfail`, `@unittest.expectedFailure`, Playwright/Jest `failing`, `XCTExpectFailure`, `withKnownIssue` |
+| `temp-no-cleanup` | creates a temp dir/file (`os.MkdirTemp`, `tempfile.mkdtemp`, `mkdtempSync`) with no cleanup in the test or in its file's `afterEach`/`afterAll`/`tearDown` |
+
+The gate is the finding *count* (`--fail-above`, default `0`). The report
+also prints assertions per test as an informational density number.
+`--ignore` disables individual checks by name (e.g. `--ignore
+interaction-only` for a codebase where mock verification is a deliberate
+style). Test-level facts are extracted with real parsers — `go/parser`, Python's
+`ast`, the target repo's own `typescript` package (same resolution and TS7
+fallback as crap-metric) — not regexes.
+
+What counts as an assertion is deliberately generous, so a finding is
+almost always real: `t.Error*`/`t.Fatal*`, testify `assert.*`/`require.*`,
+Python `assert`/`self.assert*`/`pytest.raises`, `expect(...)`/
+`assert.*`/supertest `.expect(...)`, and any call of an assertion-shaped
+name (`assertX`, `verifyX`, `checkX`, …). In Go, a call passing the test's
+`t` to a same-package helper counts when that helper's *body* fails `t` (so
+`findFunc(t, ...)` counts even though its name doesn't sound like an
+assertion). Not detected, by design: whether assertions are *meaningful*.
+That takes semantic understanding; the mutation gate below is the honest
+check.
+
+**Swift** runs on the same native `internal/swiftlex` lexer as crap-metric
+and dupe-metric (no toolchain needed, same documented limits). A test is an
+XCTest `func test…()` with no parameters in a file that imports XCTest, or any
+`func` with a `@Test` attribute. Assertions are `XCTAssert*`/`XCTFail`/
+`XCTUnwrap`, `#expect`/`#require`, and `Issue.record`; helpers anywhere under
+`--dir` (e.g. a shared `TestHelpers.swift`) count when their body asserts.
+`expectation(description:)` is not an assertion. Swift has no standard mock
+library, so `interaction-only` never fires there.
+
+#### `test-metric mutation` — does the suite catch bugs?
+
+Mutation testing injects small bugs (`<` → `<=`, `+` → `-`) and checks
+whether any test fails. A surviving mutant is a bug the suite would have
+let ship — it measures exactly the "asserts behavior" quality a static
+check can't. Like crap-metric with coverage, test-metric doesn't run the
+mutation tool itself (slow, language-specific, and the target repo's CI
+already owns it); it parses the tool's JSON report into one model and
+gates on the score:
+
+- **Go**: [go-gremlins](https://github.com/go-gremlins/gremlins) — `gremlins unleash --output gremlins.json`
+- **TypeScript/JS**: [Stryker](https://stryker-mutator.io) — its
+  `mutation.json` (`--reporters json`; the mutation-testing-elements schema)
+- **Python / Swift / anything else**: a generic
+  `{"mutants":[{"file","line","mutator","status"}]}` file, `status` one of
+  `killed|timeout|survived|no_coverage|ignored`, so a small converter over
+  mutmut/muter output feeds the same gate
+
+The format is auto-detected. Score = `(killed + timeout) / (killed + timeout
++ survived + no-coverage)`; mutants with no verdict (compile errors, not
+viable, skipped) are left out. `--covered-only` also leaves out
+never-executed mutants so the score measures assertion strength alone —
+line coverage is crap-metric's job. `--fail-below` defaults to `60`. The
+table lists surviving mutants (`file:line`, mutator). `--dir` relativizes
+absolute paths in the report, and `--only-files` re-scores just the
+touched files' mutants — the practical way to run this in PR CI, since a
+full mutation run is slow but a per-changed-file one isn't.
+
 ## Architecture
 
 ```
 cmd/
-  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/
+  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/    test-metric/
 internal/
   ratchet/                        # shared --only-files primitives
-  swiftlex/                       # native Swift lexer, shared by analyzers/tokenizers below
+  swiftlex/                       # native Swift lexer, shared by analyzers/tokenizers/testscanners below
   crap/           analyzers/{golang,python,typescript,swift}
   dupe/           tokenizers/{golang,python,typescript,swift}
   escape/
   cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
+  testmetric/     testscanners/{golang,python,typescript,swift}  # static test-quality checks
+  mutation/                                                # mutation-report parsing + score gate
 testdata/
   crap/{golang,python,typescript,typescript-ts7,javascript,swift}/
   dupe/{golang,python,typescript,typescript-ts7,javascript,swift}/
   escape/{golang,python,typescript,swift}/    # .js/.jsx fixtures live alongside typescript's — same "ts" language block
   cycle/{python,typescript,javascript}/
+  test/{golang,python,typescript,swift}/  test/mutation/          # deliberately-bad tests; sample mutation reports
 ```
 
 Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`) and
@@ -225,14 +314,14 @@ tool has its own `golang/sample.go`).
 ## Status
 
 CI (`.forgejo/workflows/ci.yml`) builds/vets/tests the whole module on
-every push and PR; on `main`, it also builds all four `linux/amd64` and
+every push and PR; on `main`, it also builds all five `linux/amd64` and
 `darwin/arm64` binaries (the latter for the mac-mini runner), each with
 `-ldflags "-X main.version=<short-sha>"` baked in, and publishes them to
 **one** Forgejo release tagged with that same short commit SHA — pure
 distribution, no report data attached, so the release job also prunes
 releases down to the newest 20 after each push. It then self-checks
-crap-metric/dupe-metric/escape-metric against the repo's own (now much
-larger, all-four-tools) Go source — cycle-metric still can't self-check,
+crap-metric/dupe-metric/escape-metric/test-metric against the repo's own (now much
+larger, all-five-tools) Go source — cycle-metric still can't self-check,
 being Go-only in implementation but not supporting Go analysis.
 crap-metric's self-check trend-diffs against the previous run's report,
 read from (and then advanced on) a dedicated `reports` branch — one
@@ -240,7 +329,8 @@ commit per run, `crap-report.json` only — rather than a release asset.
 
 Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
 `install-quality-gates` action (which replaced four separate
-`install-*-metric` actions); that action's optional `version` input pins
+`install-*-metric` actions; it still needs a one-line addition to fetch
+`test-metric`, which the release job already publishes); that action's optional `version` input pins
 to a specific release tag instead of always floating on `latest`.
 
 ## Development
@@ -254,7 +344,8 @@ go test ./...
 The analyzer/tokenizer tests exercise the real underlying tools, not
 mocks — `radon` and `coverage` (Python, for crap-metric) and `node` +
 `typescript` (in each
-`testdata/{crap,dupe}/{typescript{,-ts7},javascript}/node_modules`,
+`testdata/{crap,dupe}/{typescript{,-ts7},javascript}/node_modules` and
+`testdata/test/typescript/node_modules`,
 `npm install` there if missing) need to be available locally to run the
 full suite. `python3` alone (stdlib `tokenize`, no pip package) covers
 dupe-metric's and cycle-metric's Python fixtures. Swift needs nothing

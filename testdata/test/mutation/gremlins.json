@@ -1,0 +1,27 @@
+{
+  "go_module": "example.com/app",
+  "test_efficacy": 50,
+  "mutations_coverage": 75,
+  "mutants_total": 5,
+  "mutants_killed": 2,
+  "mutants_lived": 1,
+  "mutants_not_viable": 1,
+  "mutants_not_covered": 1,
+  "files": [
+    {
+      "file_name": "internal/calc/calc.go",
+      "mutations": [
+        { "line": 10, "column": 5, "type": "ARITHMETIC_BASE", "status": "KILLED" },
+        { "line": 14, "column": 7, "type": "CONDITIONALS_BOUNDARY", "status": "LIVED" },
+        { "line": 20, "column": 3, "type": "INCREMENT_DECREMENT", "status": "NOT COVERED" }
+      ]
+    },
+    {
+      "file_name": "internal/util/util.go",
+      "mutations": [
+        { "line": 4, "column": 2, "type": "INVERT_NEGATIVES", "status": "NOT VIABLE" },
+        { "line": 9, "column": 2, "type": "CONDITIONALS_NEGATION", "status": "TIMED OUT" }
+      ]
+    }
+  ]
+}

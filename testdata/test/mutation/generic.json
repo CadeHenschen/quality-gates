@@ -1,0 +1,7 @@
+{
+  "mutants": [
+    { "file": "app/models.py", "line": 5, "mutator": "operator", "status": "killed" },
+    { "file": "app/models.py", "line": 9, "mutator": "number", "status": "survived" },
+    { "file": "app/views.py", "line": 3, "mutator": "operator", "status": "ignored" }
+  ]
+}

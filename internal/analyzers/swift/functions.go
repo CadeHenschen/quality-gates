@@ -28,24 +28,6 @@ var complexityKeywords = map[string]bool{
 	"case": true, "catch": true, "&&": true, "||": true, "??": true,
 }
 
-// declStopKeywords signal, when hit at bracket-depth 0 while scanning for a
-// function's opening '{', that no body will be found — e.g. a protocol
-// method requirement ("func bar() -> Int" with no body, followed directly
-// by the next requirement). This is a heuristic, not a real parser: a
-// pathological signature could in principle confuse it into attributing a
-// later declaration's body to this one. Not expected to matter in
-// practice — protocol requirement signatures are simple — and documented
-// here rather than solved with real parsing, consistent with this
-// package's other v1 scope choices.
-var declStopKeywords = map[string]bool{
-	"func": true, "var": true, "let": true, "case": true, "init": true,
-	"deinit": true, "subscript": true, "typealias": true,
-	"associatedtype": true, "class": true, "struct": true, "enum": true,
-	"protocol": true, "extension": true, "static": true, "override": true,
-	"mutating": true, "private": true, "public": true, "internal": true,
-	"fileprivate": true, "open": true, "final": true,
-}
-
 type typeFrame struct {
 	depth int
 	name  string
@@ -79,7 +61,7 @@ func extractFunctions(toks []swiftlex.Token) []rawFunc {
 			i = openIdx + 1
 
 		case t.Kind == swiftlex.Keyword && funcKeywords[t.Text]:
-			bodyOpen := findFuncBodyOpenBrace(toks, i)
+			bodyOpen := swiftlex.FindFuncBodyOpen(toks, i)
 			if bodyOpen == -1 {
 				i++
 				continue
@@ -121,45 +103,6 @@ func findFirstBrace(toks []swiftlex.Token, from int) int {
 	for i := from; i < len(toks); i++ {
 		if toks[i].Text == "{" {
 			return i
-		}
-	}
-	return -1
-}
-
-// findFuncBodyOpenBrace scans forward from a func/init/deinit/subscript
-// keyword at funcIdx to find its body's opening '{', tracking a local
-// depth over "([" / ")]" so a '{' inside the parameter list (a default
-// closure argument) isn't mistaken for the body. Returns -1 if the
-// declaration has no body (a protocol requirement).
-func findFuncBodyOpenBrace(toks []swiftlex.Token, funcIdx int) int {
-	depth := 0
-	for i := funcIdx + 1; i < len(toks); i++ {
-		t := toks[i]
-		switch t.Text {
-		case "(", "[":
-			depth++
-		case ")", "]":
-			if depth > 0 {
-				depth--
-			}
-		case "{":
-			if depth == 0 {
-				return i
-			}
-			depth++
-		case "}":
-			if depth == 0 {
-				return -1
-			}
-			depth--
-		case ";":
-			if depth == 0 {
-				return -1
-			}
-		default:
-			if depth == 0 && t.Kind == swiftlex.Keyword && declStopKeywords[t.Text] {
-				return -1
-			}
 		}
 	}
 	return -1

@@ -40,6 +40,7 @@ jobs:
           npm install --prefix testdata/dupe/typescript --no-audit --no-fund
           npm install --prefix testdata/dupe/typescript-ts7 --no-audit --no-fund
           npm install --prefix testdata/dupe/javascript --no-audit --no-fund
+          npm install --prefix testdata/test/typescript --no-audit --no-fund
 
       # This job installs every tool/fixture every analyzer, tokenizer, and
       # importer test needs (radon, node, python3, all six npm fixture
@@ -142,10 +143,12 @@ jobs:
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dupe-metric-linux-amd64     ./cmd/dupe-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o escape-metric-linux-amd64   ./cmd/escape-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o cycle-metric-linux-amd64    ./cmd/cycle-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o test-metric-linux-amd64     ./cmd/test-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o crap-metric-darwin-arm64    ./cmd/crap-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o escape-metric-darwin-arm64  ./cmd/escape-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o test-metric-darwin-arm64    ./cmd/test-metric
 
       - name: Create release and upload binaries
         env:
@@ -181,7 +184,7 @@ jobs:
             fi
           fi
 
-          for BIN in crap-metric dupe-metric escape-metric cycle-metric; do
+          for BIN in crap-metric dupe-metric escape-metric cycle-metric test-metric; do
             for PLATFORM in linux-amd64 darwin-arm64; do
               curl -sS -X POST -H "Authorization: token $TOKEN" \
                 -F "attachment=@${BIN}-${PLATFORM}" \
@@ -255,6 +258,7 @@ jobs:
           npm install --prefix testdata/dupe/typescript --no-audit --no-fund
           npm install --prefix testdata/dupe/typescript-ts7 --no-audit --no-fund
           npm install --prefix testdata/dupe/javascript --no-audit --no-fund
+          npm install --prefix testdata/test/typescript --no-audit --no-fund
 
       # Built straight from this PR's own checkout rather than installed
       # from a release — there is no release for an unmerged commit, and
@@ -263,7 +267,7 @@ jobs:
       # CLAUDE.md's "Releases are for distribution only" entry). No
       # -ldflags version needed here; this build never leaves the job.
       - name: Build binaries
-        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric
+        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric ./cmd/test-metric
 
       # Same "SKIP means a dependency is missing" assertion as the "test"
       # and post-merge "self-check" jobs.
@@ -292,6 +296,14 @@ jobs:
 
       - name: escape-metric check (self)
         run: ./escape-metric check --lang go --dir . --fail-above 1
+
+      # Static test-quality gate over this repo's own Go tests: no test
+      # without an assertion, no unconditional skip. Mutation testing is
+      # deliberately not self-checked — it needs a go-gremlins run over
+      # the whole module, too slow for every push; the `mutation`
+      # subcommand only parses a report a repo's own CI produces.
+      - name: test-metric check (self)
+        run: ./test-metric check --lang go --dir . --fail-above 0
 
       # No cycle-metric self-check — see the post-merge "self-check"
       # job's matching note: it only analyzes Python/TS, and this repo is
@@ -338,6 +350,7 @@ jobs:
           npm install --prefix testdata/dupe/typescript --no-audit --no-fund
           npm install --prefix testdata/dupe/typescript-ts7 --no-audit --no-fund
           npm install --prefix testdata/dupe/javascript --no-audit --no-fund
+          npm install --prefix testdata/test/typescript --no-audit --no-fund
 
       # http://forgejo:3000/..., not https://git.roost-r.com/... — see
       # ci-workflows' README on why the internal hostname is required for
@@ -380,6 +393,13 @@ jobs:
 
       - name: escape-metric check (self)
         run: escape-metric check --lang go --dir . --fail-above 1
+
+      # `go run`, not the installed binary: ci-workflows'
+      # install-quality-gates only fetches the four older binaries until
+      # that action learns about test-metric, and this gate shouldn't
+      # depend on a change in another repo.
+      - name: test-metric check (self)
+        run: go run ./cmd/test-metric check --lang go --dir . --fail-above 0
 
       # No cycle-metric self-check — it only analyzes Python/TS, and this
       # repo is Go, so there's no source of its own it could check. See

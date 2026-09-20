@@ -1,0 +1,8 @@
+{
+  "name": "test-metric-testdata-typescript",
+  "private": true,
+  "description": "Fixture package so internal/testscanners/typescript's tests can resolve a real installed `typescript` (classic compiler API) the same way a target repo would.",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}

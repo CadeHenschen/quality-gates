@@ -1,9 +1,9 @@
 # quality-gates
 
-Four CI quality gate CLIs (Go), one module, for repos on
+Five CI quality gate CLIs (Go), one module, for repos on
 `git.roost-r.com/cadeh`: `crap-metric` (complexity × undertested),
 `dupe-metric` (duplication), `escape-metric` (suppressed checks),
-`cycle-metric` (import cycles). See [README.md](README.md) for the
+`cycle-metric` (import cycles), `test-metric` (test quality). See [README.md](README.md) for the
 formula/algorithm, CLI usage, and architecture.
 
 This repo is a 2026-09-05 merge of four previously-standalone repos of
@@ -212,6 +212,54 @@ that for v1; `cmd/cycle-metric/main.go`'s `importerFor` returns an
 explicit explanatory error for `--lang swift`, same pattern as its `"go"`
 case, rather than falling through to the generic "unknown language"
 message.
+
+## test-metric: static checks read facts, a mutation report is the real answer
+
+`test-metric check` exists because coverage can't see a test that asserts
+nothing. Scanners (`internal/testscanners/*`) only extract per-test *facts*
+(`testmetric.Test`); every rule and threshold lives once in
+`internal/testmetric`. Scanners use real parsers (`go/parser`, Python `ast`,
+the target's `typescript`), consistent with the "tests use the real tools"
+rule above. Lessons from building it, so they aren't re-learned:
+
+- **Prefer false negatives to false positives on "no assertions".** A gate
+  that cries wolf gets ignored. So assertion detection is generous
+  (assertion-shaped helper names count), and in Go a same-package helper
+  taking `*testing.T` counts when its *body* fails `t` (`assertingHelpers`,
+  fixpoint over helpers-of-helpers). This came from dogfooding: the
+  repo's own `TestAnalyzeExtensionQualifiesName` asserts only through
+  `findFunc(t, ...)`, which a naming-only heuristic flagged. Same lesson as
+  above: run a new check against this repo before trusting it.
+- **Only *unconditional* skips are findings.** `t.Skip` inside an `if`/
+  `switch`, `skipif`, `test.skipIf` are environment guards (this repo's own
+  tests skip when `node`/`radon` is missing — CI separately
+  asserts no skips fire). Flagging them would fail every repo with a
+  legitimate tool-missing guard.
+- **Dogfooding crashed the first Go scanner:** `ast.Inspect` calls back with
+  a nil node after a node's children, and a `switch`'s absent `Init`/`Tag`
+  are nil interfaces; walking those panicked. Regression fixtures for
+  switch/type-switch/select live in `testdata/test/golang`.
+- **Mutation testing is ingested, not run.** Same stance as crap-metric with
+  coverage: the target repo's CI owns the slow, language-specific tool
+  (go-gremlins, Stryker); `internal/mutation` parses its JSON into one model.
+  The report-format structs were written from those tools' documented
+  schemas, and the fixtures in `testdata/test/mutation` are hand-written to
+  match — *not* captured from a real run. Verify against a real
+  gremlins/Stryker report before trusting a new field, and add it to the
+  fixture then.
+- **Swift shares `swiftlex`'s function-boundary logic.** `FindFuncBodyOpen`/
+  `MatchBrace` were lifted out of `internal/analyzers/swift` into
+  `internal/swiftlex` (with their tests) so the analyzer and the test scanner
+  can't drift apart on what a function body is. Swift's `throw XCTSkip` guard
+  detection is brace-context tracking (a `{` after `if`/`guard`/`else`/
+  `switch` marks a guard) — a heuristic, but a wrong guess only ever
+  under-reports a skip. A real gotcha found by the fixture: a scan loop that
+  jumps past each func's body also jumps past its *name* token, so
+  file-level facts keyed on a function's name (`tearDown`) must be recorded at
+  the `func` keyword, not by matching tokens in the outer loop.
+- **Skipped/Suite subtleties:** a skipped test's body never runs, so its
+  assertion count is not reported (no double finding); a `describe`-level
+  block only carries skip/focus, never assertion checks.
 
 ## This host's edge blocks Python urllib's default User-Agent
 

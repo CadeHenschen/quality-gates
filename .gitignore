@@ -2,9 +2,12 @@
 /dupe-metric
 /escape-metric
 /cycle-metric
+/test-metric
 crap-report.json
 dupe-report.json
 escape-report.json
 cycle-report.json
+test-report.json
+mutation-report.json
 node_modules/
 .claude/

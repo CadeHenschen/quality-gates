@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1",
+  "thresholds": { "high": 80, "low": 60 },
+  "files": {
+    "src/calc.ts": {
+      "language": "typescript",
+      "source": "",
+      "mutants": [
+        { "id": "0", "mutatorName": "ArithmeticOperator", "replacement": "-", "status": "Killed", "location": { "start": { "line": 3, "column": 10 }, "end": { "line": 3, "column": 15 } } },
+        { "id": "1", "mutatorName": "EqualityOperator", "replacement": "<=", "status": "Survived", "location": { "start": { "line": 7, "column": 8 }, "end": { "line": 7, "column": 13 } } },
+        { "id": "2", "mutatorName": "BooleanLiteral", "replacement": "false", "status": "NoCoverage", "location": { "start": { "line": 12, "column": 3 }, "end": { "line": 12, "column": 7 } } },
+        { "id": "3", "mutatorName": "StringLiteral", "replacement": "\"\"", "status": "CompileError", "location": { "start": { "line": 15, "column": 3 }, "end": { "line": 15, "column": 9 } } }
+      ]
+    },
+    "src/util.ts": {
+      "language": "typescript",
+      "source": "",
+      "mutants": [
+        { "id": "4", "mutatorName": "LogicalOperator", "replacement": "||", "status": "Timeout", "location": { "start": { "line": 2, "column": 3 }, "end": { "line": 2, "column": 9 } } }
+      ]
+    }
+  }
+}
