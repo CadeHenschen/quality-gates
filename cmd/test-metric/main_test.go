@@ -53,13 +53,24 @@ func TestScannerForDispatch(t *testing.T) {
 	}
 }
 
-func TestParseIgnore(t *testing.T) {
-	got, err := parseIgnore(" skipped, focused ,")
-	if err != nil || !got["skipped"] || !got["focused"] || len(got) != 2 {
-		t.Errorf("parseIgnore = %v, %v", got, err)
+func TestDisabledChecks(t *testing.T) {
+	got, err := disabledChecks(" skipped, focused ,", "")
+	if err != nil || !got["skipped"] || !got["focused"] || !got["interaction-only"] || got["no-assertions"] {
+		t.Errorf("--ignore with no --include: %v, %v (interaction-only is opt-in, so off)", got, err)
 	}
-	if _, err := parseIgnore("skipped,nope"); err == nil || !strings.Contains(err.Error(), "nope") {
-		t.Errorf("unknown check should error naming it, got %v", err)
+	got, err = disabledChecks("", "interaction-only")
+	if err != nil || got["interaction-only"] {
+		t.Errorf("--include should enable an opt-in check: %v, %v", got, err)
+	}
+	got, err = disabledChecks("interaction-only", "interaction-only")
+	if err != nil || !got["interaction-only"] {
+		t.Errorf("--ignore should win over --include: %v, %v", got, err)
+	}
+	if _, err := disabledChecks("skipped,nope", ""); err == nil || !strings.Contains(err.Error(), "--ignore") || !strings.Contains(err.Error(), "nope") {
+		t.Errorf("unknown --ignore check should error naming the flag and value, got %v", err)
+	}
+	if _, err := disabledChecks("", "nope"); err == nil || !strings.Contains(err.Error(), "--include") {
+		t.Errorf("unknown --include check should error naming the flag, got %v", err)
 	}
 }
 
@@ -94,10 +105,16 @@ func TestCheckGoFixtureFailsThenPasses(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1 (stderr: %s)\n%s", code, stderr, stdout)
 	}
-	for _, want := range []string{"no-assertions", "skipped", "interaction-only", "temp-no-cleanup", "FAIL"} {
+	for _, want := range []string{"no-assertions", "skipped", "temp-no-cleanup", "FAIL"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("output missing %q:\n%s", want, stdout)
 		}
+	}
+	if strings.Contains(stdout, "interaction-only") {
+		t.Errorf("interaction-only is opt-in and must not fire by default:\n%s", stdout)
+	}
+	if _, withOptIn, _ := exec("check", "--lang", "go", "--dir", fixture, "--json", "", "--include", "interaction-only"); !strings.Contains(withOptIn, "interaction-only") {
+		t.Errorf("--include interaction-only should enable it:\n%s", withOptIn)
 	}
 
 	data, err := os.ReadFile(jsonPath)

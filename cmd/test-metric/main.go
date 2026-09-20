@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/mutation"
@@ -23,7 +24,7 @@ import (
 )
 
 const usage = `usage:
-  test-metric check    --lang go|python|ts|swift --dir DIR [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--top N] [--only-files PATH] [--json PATH]
+  test-metric check    --lang go|python|ts|swift --dir DIR [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--top N] [--only-files PATH] [--json PATH]
   test-metric mutation --report PATH [--dir DIR] [--fail-below PCT] [--covered-only] [--top N] [--only-files PATH] [--json PATH]
   test-metric version`
 
@@ -70,23 +71,43 @@ func scannerFor(lang string) (testscanners.Scanner, error) {
 	return nil, fmt.Errorf("unknown --lang %q (want go, python, ts, or swift)", lang)
 }
 
-func parseIgnore(list string) (map[string]bool, error) {
-	ignore := map[string]bool{}
+// parseKinds splits a comma-separated list of check names, rejecting any
+// that aren't real checks (flag names the offending flag in the error).
+func parseKinds(flagName, list string) ([]string, error) {
+	var kinds []string
 	for _, k := range strings.Split(list, ",") {
 		k = strings.TrimSpace(k)
 		if k == "" {
 			continue
 		}
-		known := false
-		for _, want := range testmetric.Kinds {
-			known = known || k == want
+		if !slices.Contains(testmetric.Kinds, k) {
+			return nil, fmt.Errorf("unknown --%s check %q (want one of %s)", flagName, k, strings.Join(testmetric.Kinds, ", "))
 		}
-		if !known {
-			return nil, fmt.Errorf("unknown --ignore check %q (want one of %s)", k, strings.Join(testmetric.Kinds, ", "))
-		}
-		ignore[k] = true
+		kinds = append(kinds, k)
 	}
-	return ignore, nil
+	return kinds, nil
+}
+
+// disabledChecks returns the set of checks to skip: the opt-in ones unless
+// named in --include, plus everything named in --ignore (which wins over
+// --include).
+func disabledChecks(ignoreList, includeList string) (map[string]bool, error) {
+	ignored, err := parseKinds("ignore", ignoreList)
+	if err != nil {
+		return nil, err
+	}
+	included, err := parseKinds("include", includeList)
+	if err != nil {
+		return nil, err
+	}
+	disabled := map[string]bool{}
+	for _, k := range testmetric.OptIn {
+		disabled[k] = !slices.Contains(included, k)
+	}
+	for _, k := range ignored {
+		disabled[k] = true
+	}
+	return disabled, nil
 }
 
 func runCheck(args []string, stdout, stderr io.Writer) int {
@@ -97,6 +118,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Int("fail-above", 0, "number of findings above which the gate fails")
 	minAssertions := fs.Int("min-assertions", 1, "assertions a test needs; fewer is flagged (0 assertions is always flagged)")
 	ignoreList := fs.String("ignore", "", "comma-separated checks to disable: "+strings.Join(testmetric.Kinds, ", "))
+	includeList := fs.String("include", "", "comma-separated opt-in checks to enable (off by default: "+strings.Join(testmetric.OptIn, ", ")+")")
 	top := fs.Int("top", 20, "number of findings to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to findings in these files, so pre-existing ones elsewhere don't block; omit to check the whole --dir")
 	jsonOut := fs.String("json", "test-report.json", "path to write the full JSON report")
@@ -113,7 +135,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "test-metric:", err)
 		return 2
 	}
-	ignore, err := parseIgnore(*ignoreList)
+	ignore, err := disabledChecks(*ignoreList, *includeList)
 	if err != nil {
 		fmt.Fprintln(stderr, "test-metric:", err)
 		return 2

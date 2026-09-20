@@ -261,6 +261,17 @@ rule above. Lessons from building it, so they aren't re-learned:
   assertion count is not reported (no double finding); a `describe`-level
   block only carries skip/focus, never assertion checks.
 
+- **Two false-positive classes surfaced by the first real-app run
+  (d_amp_d's 1774 vitest/Playwright tests) — run a new check on a real
+  codebase before shipping it as a default.** (1) `interaction-only` flagged
+  345 tests: in a React app, `expect(onChange).toHaveBeenCalledWith(...)` on a
+  callback prop *is* the behavior, and statically a collaborator mock and an
+  output callback look identical. It is now opt-in (`testmetric.OptIn`,
+  `--include`). (2) The TS scanner treated Playwright's `test.afterAll(...)`/
+  `beforeEach`/`test.step(...)` as tests, reporting an anonymous "no-assertions"
+  test; only `test.<skip|only|todo|fixme|each|…>` (`TEST_MODS`) are test
+  declarations now. Both have regression fixtures.
+
 ## This host's edge blocks Python urllib's default User-Agent
 
 Any CI step that calls `git.roost-r.com`'s API from Python

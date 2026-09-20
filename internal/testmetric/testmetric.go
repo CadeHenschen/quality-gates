@@ -66,6 +66,14 @@ var Kinds = []string{
 	KindLowAssertions, KindInteractionOnly, KindTempNoCleanup,
 }
 
+// OptIn lists the checks that are off unless asked for. interaction-only
+// can't tell a mock that is a *collaborator* (verifying it pins the
+// implementation) from a callback prop that is the component's *output*
+// (`expect(onChange).toHaveBeenCalledWith(...)` is the behavior): run over a
+// real React app's tests it flagged 345 of 1774 tests, nearly all of them
+// legitimate. It's meaningful where mocks are collaborators, so it's opt-in.
+var OptIn = []string{KindInteractionOnly}
+
 // Finding is one problem in one test.
 type Finding struct {
 	File   string `json:"file"`

@@ -90,7 +90,7 @@ crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
-test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--only-files PATH] [--json PATH]
+test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--only-files PATH] [--json PATH]
 test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--only-files PATH] [--json PATH]
 <any tool>    version
 ```
@@ -215,7 +215,7 @@ for Swift) and reports, per test:
 |---|---|
 | `no-assertions` | the test makes zero assertions, so it can't fail on wrong behavior |
 | `low-assertions` | fewer than `--min-assertions` (default 1, so off unless raised) |
-| `interaction-only` | *every* assertion only verifies a mock/spy was called (`toHaveBeenCalled`, `assert_called_once`, testify `AssertCalled`) — the test pins the implementation, nothing checks a return value or resulting state |
+| `interaction-only` (**opt-in**, `--include interaction-only`) | *every* assertion only verifies a mock/spy was called (`toHaveBeenCalled`, `assert_called_once`, testify `AssertCalled`) — the test pins the implementation, nothing checks a return value or resulting state |
 | `skipped` | unconditionally skipped: `t.Skip` outside any `if`/`switch`, `@pytest.mark.skip`, `@unittest.skip`, `pytest.skip()`, `it.skip`/`xit`/`it.todo`/`describe.skip`. Conditional skips (`skipif`, `test.skipIf`, a `t.Skip` inside an `if`) are environment guards and never fire |
 | `focused` | `.only`, `fit`, `fdescribe` — silently disables every other test in the run |
 | `expected-failure` | `@pytest.mark.xfail`, `@unittest.expectedFailure`, Playwright/Jest `failing`, `XCTExpectFailure`, `withKnownIssue` |
@@ -223,9 +223,13 @@ for Swift) and reports, per test:
 
 The gate is the finding *count* (`--fail-above`, default `0`). The report
 also prints assertions per test as an informational density number.
-`--ignore` disables individual checks by name (e.g. `--ignore
-interaction-only` for a codebase where mock verification is a deliberate
-style). Test-level facts are extracted with real parsers — `go/parser`, Python's
+`--ignore` disables individual checks by name; `--include` enables the
+opt-in ones (only `interaction-only` today, and `--ignore` wins if both name it).
+`interaction-only` is off by default because it can't tell a mock that is a
+*collaborator* (verifying it pins the implementation) from a callback prop that
+is the component's *output*: over a real React app it flagged 345 of 1774 tests,
+nearly all of them `expect(onChange).toHaveBeenCalledWith(...)` on a component
+whose callbacks are its contract. Turn it on where mocks are collaborators. Test-level facts are extracted with real parsers — `go/parser`, Python's
 `ast`, the target repo's own `typescript` package (same resolution and TS7
 fallback as crap-metric) — not regexes.
 

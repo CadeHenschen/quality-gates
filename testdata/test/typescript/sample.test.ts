@@ -77,3 +77,20 @@ test('top-level test', () => {
 test.skipIf(process.platform === 'win32')('conditional skip is fine', () => {
   expect(true).toBe(true);
 });
+
+// Playwright-style hooks and steps take callbacks but are not tests: they
+// must not be reported as assertion-less tests.
+test.beforeAll(async () => {
+  setup();
+});
+
+test.afterEach(async () => {
+  teardown();
+});
+
+test('uses a step', async () => {
+  await test.step('inner step with no assertion of its own', async () => {
+    doWork();
+  });
+  expect(1).toBe(1);
+});

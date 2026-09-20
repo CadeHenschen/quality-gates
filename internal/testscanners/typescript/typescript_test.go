@@ -3,6 +3,7 @@ package typescript
 import (
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/testmetric"
@@ -96,5 +97,26 @@ func TestTempCleanupDetection(t *testing.T) {
 		if got[name].UncleanedTemp {
 			t.Errorf("%q should not be flagged for temp cleanup", name)
 		}
+	}
+}
+
+func TestHooksAndStepsAreNotTests(t *testing.T) {
+	tests := scanFixture(t)
+	names := map[string]int{}
+	for _, tc := range tests {
+		names[tc.Name]++
+	}
+	// test.beforeAll / test.afterEach / test.step take callbacks but aren't
+	// tests; a hook recorded as a test would surface as a bogus no-assertions.
+	for name, n := range names {
+		if name == "<anonymous>" {
+			t.Errorf("found %d anonymous test(s) — a hook was recorded as a test", n)
+		}
+		if strings.HasPrefix(name, "inner step") {
+			t.Errorf("test.step %q was recorded as a test", name)
+		}
+	}
+	if got := byName(tests)["uses a step"]; got.Assertions != 1 {
+		t.Errorf("'uses a step' assertions = %d, want 1 (the step's own body is part of the test)", got.Assertions)
 	}
 }

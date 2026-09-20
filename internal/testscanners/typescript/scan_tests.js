@@ -58,6 +58,12 @@ const scriptKindByExt = {
 };
 
 const TEST_ROOTS = new Set(['it', 'test', 'fit', 'xit', 'xtest']);
+// Modifiers that keep `test.<mod>(...)` a *test declaration*. Anything else
+// on a test root — Playwright's test.beforeAll/afterAll/beforeEach/afterEach
+// hooks, test.step(...) inside a test, test.use/setTimeout/slow/info — takes a
+// callback too, but isn't a test: recording one would report a hook or step
+// as a test with no assertions.
+const TEST_MODS = new Set(['skip', 'only', 'todo', 'fixme', 'fails', 'failing', 'each', 'concurrent', 'sequential', 'runIf', 'skipIf', 'for']);
 const SUITE_ROOTS = new Set(['describe', 'fdescribe', 'xdescribe']);
 const ASSERT_HELPER = /^(assert|expect|verify|check|ensure|validate|should)/i;
 const CLEANUP_CALLS = new Set(['rm', 'rmSync', 'rmdir', 'rmdirSync', 'unlink', 'unlinkSync', 'remove', 'removeSync', 'emptyDir', 'emptyDirSync']);
@@ -149,7 +155,7 @@ for (const file of files) {
     if (ts.isCallExpression(n)) {
       const chain = calleeChain(n.expression);
       const isSuite = chain && (SUITE_ROOTS.has(chain.root) || (chain.root === 'test' && chain.mods.includes('describe')));
-      const isTest = chain && TEST_ROOTS.has(chain.root) && !isSuite;
+      const isTest = chain && TEST_ROOTS.has(chain.root) && !isSuite && chain.mods.every((m) => TEST_MODS.has(m));
       const nameArg = n.arguments[0];
       const fnArg = n.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a));
       // The inner `.each(table)` call of `test.each(table)(name, fn)` has
