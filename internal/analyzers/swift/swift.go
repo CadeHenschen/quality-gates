@@ -70,7 +70,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			return nil
 		}
 
-		fns, err := analyzeFile(path, opts.Dir, cov)
+		fns, err := analyzeFile(path, opts.Dir, cov, opts.CoveragePath != "")
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -87,7 +87,7 @@ func isTestFile(name string) bool {
 	return strings.HasSuffix(name, "Tests.swift") || strings.HasSuffix(name, "Test.swift")
 }
 
-func analyzeFile(path, dir string, cov lcovData) ([]crap.Function, error) {
+func analyzeFile(path, dir string, cov lcovData, haveCoverage bool) ([]crap.Function, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -114,6 +114,7 @@ func analyzeFile(path, dir string, cov lcovData) ([]crap.Function, error) {
 			LinesTotal:     total,
 			LinesCovered:   covered,
 			UncoveredLines: crap.MergeLineRanges(uncovered),
+			Unmeasured:     haveCoverage && covLines == nil,
 		})
 	}
 	return out, nil

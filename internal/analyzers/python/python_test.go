@@ -135,3 +135,36 @@ func TestFlattenDropsClassEntries(t *testing.T) {
 		}
 	}
 }
+
+func TestAnalyzeUnmeasuredWhenFileAbsentFromReport(t *testing.T) {
+	skipIfNoRadon(t)
+
+	path := filepath.Join(t.TempDir(), "coverage.json")
+	if err := os.WriteFile(path, []byte(`{"files":{"other.py":{"executed_lines":[1],"missing_lines":[]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fns, err := Analyzer{}.Analyze(analyzers.Options{Dir: "../../../testdata/crap/python", CoveragePath: path})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(fns) == 0 {
+		t.Fatal("no functions analyzed")
+	}
+	for _, f := range fns {
+		if !f.Unmeasured {
+			t.Errorf("%s: want Unmeasured", f.Name)
+		}
+	}
+
+	// A file the report does cover must not be flagged.
+	dir := "../../../testdata/crap/python"
+	fns, err = Analyzer{}.Analyze(analyzers.Options{Dir: dir, CoveragePath: writeCoverageFixture(t, dir)})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	for _, f := range fns {
+		if f.Unmeasured {
+			t.Errorf("%s: covered file flagged Unmeasured", f.Name)
+		}
+	}
+}

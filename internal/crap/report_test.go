@@ -137,3 +137,20 @@ func TestWriteJSON(t *testing.T) {
 		t.Errorf("FailAbove = %v, want 30", decoded.FailAbove)
 	}
 }
+
+func TestWriteTableFlagsUnmeasured(t *testing.T) {
+	report := NewReport([]Function{
+		{File: "b.go", Name: "orphan", StartLine: 3, Complexity: 40, Unmeasured: true},
+		{File: "a.go", Name: "ok", StartLine: 1, Complexity: 1, LinesTotal: 4, LinesCovered: 4},
+	}, 30)
+
+	var buf bytes.Buffer
+	report.WriteTable(&buf, 20, false)
+	out := buf.String()
+
+	for _, want := range []string{"none", "WARNING: 1 function(s) in 1 file(s) are absent from the coverage report", "  b.go\n", "FAIL"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q, got:\n%s", want, out)
+		}
+	}
+}

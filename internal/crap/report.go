@@ -3,6 +3,7 @@ package crap
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
@@ -42,11 +43,15 @@ func (r Report) WriteTable(w io.Writer, top int, verbose bool) {
 	type row [5]string
 	rendered := make([]row, len(rows))
 	for i, s := range rows {
+		coverage := fmt.Sprintf("%.0f%%", s.Coverage()*100)
+		if s.Unmeasured {
+			coverage = "none"
+		}
 		r := row{
 			fmt.Sprintf("%s:%d", s.File, s.StartLine),
 			s.Name,
 			fmt.Sprintf("%d", s.Complexity),
-			fmt.Sprintf("%.0f%%", s.Coverage()*100),
+			coverage,
 			fmt.Sprintf("%.1f", s.Crap),
 		}
 		for i, cell := range r {
@@ -80,11 +85,38 @@ func (r Report) WriteTable(w io.Writer, top int, verbose bool) {
 	}
 
 	fmt.Fprintln(w)
+	if n, files := r.unmeasured(); n > 0 {
+		fmt.Fprintf(w, "WARNING: %d function(s) in %d file(s) are absent from the coverage report (no test loads them) and are scored as 0%% covered:\n", n, len(files))
+		for _, f := range files {
+			fmt.Fprintf(w, "  %s\n", f)
+		}
+		fmt.Fprintln(w)
+	}
 	if r.Passed {
 		fmt.Fprintf(w, "PASS: no function exceeds CRAP %.1f\n", r.FailAbove)
 	} else {
 		fmt.Fprintf(w, "FAIL: at least one function exceeds CRAP %.1f\n", r.FailAbove)
 	}
+}
+
+// unmeasured counts functions whose file is missing from the coverage
+// report, and lists those files (sorted) so the fix — add a test that
+// loads them, or include them in the coverage run — is obvious.
+func (r Report) unmeasured() (int, []string) {
+	seen := map[string]bool{}
+	n := 0
+	for _, s := range r.Functions {
+		if s.Unmeasured {
+			n++
+			seen[s.File] = true
+		}
+	}
+	files := make([]string, 0, len(seen))
+	for f := range seen {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return n, files
 }
 
 func formatRanges(ranges []LineRange) string {

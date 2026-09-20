@@ -354,3 +354,43 @@ func TestRunUnknownLang(t *testing.T) {
 		t.Errorf("expected an unknown-language error, got %q", stderr.String())
 	}
 }
+
+func TestRunExcludeFileDefaultAndExplicit(t *testing.T) {
+	// A copy of the fixture whose --dir holds the default exclude file.
+	src, err := os.ReadFile("../../testdata/crap/golang/sample.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sample.go"), src, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := func(extra ...string) []string {
+		return append([]string{"check", "--lang", "go", "--dir", dir, "--fail-above", "0", "--json", filepath.Join(dir, "r.json")}, extra...)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(args(), &stdout, &stderr); code != 1 {
+		t.Fatalf("no exclude file: exit %d, want 1 (%s)", code, stderr.String())
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".crap-metric-exclude"), []byte("# fixture\nsample.go # why\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if code := run(args(), &stdout, &stderr); code != 0 {
+		t.Fatalf("default exclude file: exit %d, want 0 (%s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "exclude file: ") {
+		t.Errorf("expected the exclude file to be announced, got:\n%s", stdout.String())
+	}
+
+	// An explicit path that doesn't exist is an error, unlike the default.
+	stderr.Reset()
+	if code := run(args("--exclude-file", filepath.Join(dir, "missing")), &stdout, &stderr); code != 2 {
+		t.Errorf("missing explicit file: exit %d, want 2", code)
+	}
+}

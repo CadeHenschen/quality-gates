@@ -108,3 +108,37 @@ func TestParseCoverProfileAndRangeOverlap(t *testing.T) {
 		t.Errorf("range [1,5]: uncovered=%v, want none (no overlap)", uncovered)
 	}
 }
+
+// TestAnalyzeUnmeasuredWhenFileAbsentFromProfile: a profile that covers some
+// other file must mark this file's functions Unmeasured, not fully covered.
+func TestAnalyzeUnmeasuredWhenFileAbsentFromProfile(t *testing.T) {
+	prof := filepath.Join(t.TempDir(), "cover.out")
+	if err := os.WriteFile(prof, []byte("mode: set\nexample.com/other/file.go:1.1,2.2 1 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := "../../../testdata/crap/golang"
+
+	fns, err := Analyzer{}.Analyze(analyzers.Options{Dir: dir, CoveragePath: prof})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(fns) == 0 {
+		t.Fatal("no functions analyzed")
+	}
+	for _, f := range fns {
+		if !f.Unmeasured || f.Coverage() != 0 {
+			t.Errorf("%s: Unmeasured=%v Coverage=%v, want true/0", f.Name, f.Unmeasured, f.Coverage())
+		}
+	}
+
+	// No coverage report at all is a different case: nothing is claimed.
+	fns, err = Analyzer{}.Analyze(analyzers.Options{Dir: dir})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	for _, f := range fns {
+		if f.Unmeasured {
+			t.Errorf("%s: Unmeasured without a coverage report", f.Name)
+		}
+	}
+}

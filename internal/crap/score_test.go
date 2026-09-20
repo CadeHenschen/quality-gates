@@ -101,3 +101,17 @@ func TestMergeLineRanges(t *testing.T) {
 		})
 	}
 }
+
+func TestUnmeasuredScoresAsUncovered(t *testing.T) {
+	f := Function{Complexity: 6, Unmeasured: true}
+	if f.Coverage() != 0 {
+		t.Errorf("Coverage = %v, want 0", f.Coverage())
+	}
+	if got, want := Score(f), 6.0*6.0+6.0; got != want {
+		t.Errorf("Score = %v, want %v", got, want)
+	}
+	// An empty function in a measured file is still fully covered.
+	if got := (Function{Complexity: 1}).Coverage(); got != 1 {
+		t.Errorf("empty measured Coverage = %v, want 1", got)
+	}
+}

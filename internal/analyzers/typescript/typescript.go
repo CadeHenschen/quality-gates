@@ -72,7 +72,8 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 
 		total, covered := 0, 0
 		var uncoveredLines []int
-		if fc, ok := coverage[f.File]; ok {
+		fc, inReport := coverage[f.File]
+		if inReport {
 			for id, stmt := range fc.StatementMap {
 				if stmt.Start.Line < f.StartLine || stmt.Start.Line > f.EndLine {
 					continue
@@ -95,6 +96,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			LinesTotal:     total,
 			LinesCovered:   covered,
 			UncoveredLines: crap.MergeLineRanges(uncoveredLines),
+			Unmeasured:     opts.CoveragePath != "" && !inReport,
 		})
 	}
 	return out2, nil

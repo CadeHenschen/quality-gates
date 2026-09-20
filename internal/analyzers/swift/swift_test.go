@@ -1,6 +1,8 @@
 package swift
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
@@ -126,5 +128,27 @@ func TestAnalyzeEmptyDirNoError(t *testing.T) {
 	}
 	if len(fns) != 0 {
 		t.Errorf("got %d functions from an empty dir, want 0", len(fns))
+	}
+}
+
+func TestAnalyzeUnmeasuredWhenFileAbsentFromLCOV(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coverage.lcov")
+	if err := os.WriteFile(path, []byte("SF:Other.swift\nDA:1,1\nend_of_record\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fns := analyzeFixture(t, path)
+	if len(fns) == 0 {
+		t.Fatal("no functions analyzed")
+	}
+	for _, f := range fns {
+		if !f.Unmeasured {
+			t.Errorf("%s: want Unmeasured", f.Name)
+		}
+	}
+
+	for _, f := range analyzeFixture(t, "../../../testdata/crap/swift/coverage.lcov") {
+		if f.Unmeasured {
+			t.Errorf("%s: covered file flagged Unmeasured", f.Name)
+		}
 	}
 }

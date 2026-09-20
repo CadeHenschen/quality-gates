@@ -20,6 +20,13 @@ type Function struct {
 	// analyzer wasn't given a coverage report, or the function is fully
 	// covered.
 	UncoveredLines []LineRange `json:"uncovered_lines,omitempty"`
+	// Unmeasured is set when a coverage report was supplied but has no
+	// entry at all for this function's file — typically source no test
+	// ever loads. That is different from "measured, nothing coverable"
+	// (LinesTotal == 0 in a file the report does cover): it means nobody
+	// knows the coverage, and the honest reading is untested, so
+	// Coverage() reports 0 instead of the empty-function 1.
+	Unmeasured bool `json:"unmeasured,omitempty"`
 }
 
 // LineRange is an inclusive [Start, End] line span.
@@ -57,8 +64,13 @@ func MergeLineRanges(lines []int) []LineRange {
 
 // Coverage returns the function's line coverage ratio in [0, 1]. A function
 // with no coverable lines (LinesTotal == 0) is treated as fully covered,
-// since an empty function carries no risk from being untested.
+// since an empty function carries no risk from being untested — unless it
+// is Unmeasured (its file is absent from the coverage report), which counts
+// as 0% covered.
 func (f Function) Coverage() float64 {
+	if f.Unmeasured {
+		return 0
+	}
 	if f.LinesTotal <= 0 {
 		return 1
 	}

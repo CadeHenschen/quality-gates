@@ -55,7 +55,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			return nil
 		}
 
-		fns, err := analyzeFile(path, modRoot, modPath, blocks)
+		fns, err := analyzeFile(path, modRoot, modPath, blocks, opts.CoveragePath != "")
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -68,7 +68,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 	return out, nil
 }
 
-func analyzeFile(path, modRoot, modPath string, blocks []coverBlock) ([]crap.Function, error) {
+func analyzeFile(path, modRoot, modPath string, blocks []coverBlock, haveCoverage bool) ([]crap.Function, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 	if err != nil {
@@ -84,6 +84,8 @@ func analyzeFile(path, modRoot, modPath string, blocks []coverBlock) ([]crap.Fun
 		return nil, err
 	}
 	importPath := modPath + "/" + filepath.ToSlash(rel)
+
+	unmeasured := haveCoverage && !fileInProfile(blocks, importPath)
 
 	var out []crap.Function
 	for _, decl := range file.Decls {
@@ -105,6 +107,7 @@ func analyzeFile(path, modRoot, modPath string, blocks []coverBlock) ([]crap.Fun
 			LinesTotal:     total,
 			LinesCovered:   covered,
 			UncoveredLines: uncovered,
+			Unmeasured:     unmeasured,
 		})
 	}
 	return out, nil
@@ -260,6 +263,17 @@ func leadingInt(s string) (int, error) {
 		return strconv.Atoi(s)
 	}
 	return strconv.Atoi(s[:dot])
+}
+
+// fileInProfile reports whether the cover profile has any block for file.
+// A file with functions but no blocks is one no test's package ever built.
+func fileInProfile(blocks []coverBlock, file string) bool {
+	for _, b := range blocks {
+		if b.file == file {
+			return true
+		}
+	}
+	return false
 }
 
 // coverageForRange sums statement counts (Go's coverage granularity is

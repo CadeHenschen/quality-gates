@@ -60,7 +60,8 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 
 	var out []crap.Function
 	for file, entries := range byFile {
-		fileCov := cov.Files[file]
+		fileCov, inReport := cov.Files[file]
+		unmeasured := opts.CoveragePath != "" && !inReport
 		executed := toSet(fileCov.ExecutedLines)
 		measured := toSet(fileCov.ExecutedLines)
 		for _, l := range fileCov.MissingLines {
@@ -91,6 +92,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 				LinesTotal:     total,
 				LinesCovered:   covered,
 				UncoveredLines: crap.MergeLineRanges(uncoveredLines),
+				Unmeasured:     unmeasured,
 			})
 		}
 	}

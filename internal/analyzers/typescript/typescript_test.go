@@ -204,3 +204,28 @@ func TestAnalyzeFallsBackToTypescript6ForTS7(t *testing.T) {
 		t.Errorf("branchy complexity = %d, want 2", fns[0].Complexity)
 	}
 }
+
+func TestAnalyzeUnmeasuredWhenFileAbsentFromReport(t *testing.T) {
+	skipIfNoNode(t)
+
+	dir := "../../../testdata/crap/typescript"
+	if _, err := os.Stat(filepath.Join(dir, "node_modules", "typescript")); err != nil {
+		t.Skip("testdata/crap/typescript has no installed typescript package — run `npm install typescript@5` there")
+	}
+	path := filepath.Join(t.TempDir(), "coverage-final.json")
+	if err := os.WriteFile(path, []byte(`{"/elsewhere/other.ts":{"statementMap":{},"s":{}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fns, err := Analyzer{}.Analyze(analyzers.Options{Dir: dir, CoveragePath: path})
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(fns) == 0 {
+		t.Fatal("no functions analyzed")
+	}
+	for _, f := range fns {
+		if !f.Unmeasured {
+			t.Errorf("%s: want Unmeasured", f.Name)
+		}
+	}
+}

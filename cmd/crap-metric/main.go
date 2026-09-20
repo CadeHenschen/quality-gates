@@ -15,11 +15,12 @@ import (
 	swiftanalyzer "git.roost-r.com/cadeh/quality-gates/internal/analyzers/swift"
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers/typescript"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
+	"git.roost-r.com/cadeh/quality-gates/internal/exclude"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
 )
 
 const usage = `usage:
-  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--json PATH]
+  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
   crap-metric diff --old PATH --new PATH [--top N] [--json]
   crap-metric version`
 
@@ -63,6 +64,9 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	top := fs.Int("top", 20, "number of hotspot rows to print (0 = all)")
 	verbose := fs.Bool("verbose", false, "show each hotspot's uncovered line ranges")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to only functions in these files, so pre-existing hotspots elsewhere don't block; omit to check the whole --dir as before")
+	var excludes stringList
+	fs.Var(&excludes, "exclude", "glob of --dir-relative files to drop from analysis entirely (repeatable; e.g. 'internal/gen/**', '**/*_pb.go'). Unlike --only-files this removes files from the report too")
+	excludeFile := fs.String("exclude-file", "", "file of exclude globs, one per line, '#' comments (default: "+exclude.DefaultFile+" in --dir, if present; commit it to keep exclusions reviewable)")
 	jsonOut := fs.String("json", "crap-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -83,6 +87,21 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, "crap-metric: analyze:", err)
 		return 2
+	}
+
+	patterns, err := loadExcludePatterns(*dir, *excludeFile, excludes, stdout)
+	if err != nil {
+		fmt.Fprintln(stderr, "crap-metric: reading exclude file:", err)
+		return 2
+	}
+	excluded, err := exclude.Compile(patterns)
+	if err != nil {
+		fmt.Fprintln(stderr, "crap-metric: bad --exclude pattern:", err)
+		return 2
+	}
+	fns, nExcluded := dropExcluded(fns, excluded)
+	if nExcluded > 0 {
+		fmt.Fprintf(stdout, "excluded: %d function(s) by --exclude\n\n", nExcluded)
 	}
 
 	// The full report (every function in --dir) is always what gets
