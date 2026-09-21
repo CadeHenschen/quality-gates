@@ -1,7 +1,8 @@
 // Command dead-metric gates on dead code — functions, exports and files
 // that nothing reaches. It doesn't detect anything itself: it ingests the
-// report of `deadcode -json` (Go), `knip --reporter json` (TS/JS) or
-// `vulture` (Python), which the target repo's own CI runs, and gates on the count.
+// report of `deadcode -json` (Go), `knip --reporter json` (TS/JS),
+// `vulture` (Python) or `periphery` (Swift), which the target repo's own CI
+// runs, and gates on the count. Code only tests use counts as dead.
 package main
 
 import (
@@ -15,7 +16,7 @@ import (
 )
 
 const usage = `usage:
-  dead-metric --report PATH [--format deadcode|knip|vulture] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
+  dead-metric --report PATH [--format deadcode|knip|vulture|periphery] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
   dead-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -40,8 +41,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("dead-metric", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	reportPath := fs.String("report", "", "dead-code report to gate on: `deadcode -json` (Go), `knip --reporter json` (TS/JS), or `vulture` output (Python)")
-	format := fs.String("format", "", "report format: deadcode, knip, or vulture (default: auto-detect; needed to accept an empty vulture report, since vulture prints nothing when clean)")
+	reportPath := fs.String("report", "", "dead-code report to gate on: `deadcode -json` (Go), `knip --reporter json` (TS/JS), `vulture` output (Python), or `periphery scan --format json` (Swift)")
+	format := fs.String("format", "", "report format: deadcode, knip, vulture, or periphery (default: auto-detect; needed to accept an empty vulture report, since vulture prints nothing when clean)")
 	dir := fs.String("dir", "", "relativize absolute paths in the report to this directory")
 	ignorePath := fs.String("ignore", "", "allowlist file: symbol names, globs and dir/ prefixes for code that is live in fact (reflection, plugins, public API)")
 	failAbove := fs.Int("fail-above", 0, "number of dead symbols above which the gate fails")

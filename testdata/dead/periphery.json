@@ -1,0 +1,128 @@
+[
+  {
+    "attributes" : [
+
+    ],
+    "ids" : [
+      "s:10SteadyCore5worstyAA4BandOSayADGF"
+    ],
+    "hints" : [
+      "redundantPublicAccessibility"
+    ],
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Packages/SteadyCore/Sources/SteadyCore/Enums.swift:59:13",
+    "modifiers" : [
+      "public"
+    ],
+    "kind" : "function.free",
+    "accessibility" : "public",
+    "name" : "worst(_:)",
+    "modules" : [
+      "SteadyCore"
+    ]
+  },
+  {
+    "modules" : [
+      "SteadyCore"
+    ],
+    "ids" : [
+      "s:10SteadyCore8LogEntryV4unitAA0C4UnitOvp"
+    ],
+    "kind" : "var.instance",
+    "name" : "unit",
+    "attributes" : [
+
+    ],
+    "hints" : [
+      "assignOnlyProperty"
+    ],
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Packages/SteadyCore/Sources/SteadyCore/LogEntry.swift:7:16",
+    "modifiers" : [
+      "public"
+    ],
+    "accessibility" : "public"
+  },
+  {
+    "modifiers" : [
+      "public"
+    ],
+    "kind" : "var.instance",
+    "ids" : [
+      "s:10SteadyCore8LogEntryV4noteSSSgvp"
+    ],
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Packages/SteadyCore/Sources/SteadyCore/LogEntry.swift:9:16",
+    "modules" : [
+      "SteadyCore"
+    ],
+    "attributes" : [
+
+    ],
+    "name" : "note",
+    "accessibility" : "public",
+    "hints" : [
+      "assignOnlyProperty"
+    ]
+  },
+  {
+    "attributes" : [
+
+    ],
+    "hints" : [
+      "assignOnlyProperty"
+    ],
+    "modules" : [
+      "SteadyCore"
+    ],
+    "modifiers" : [
+      "public"
+    ],
+    "name" : "createdAt",
+    "accessibility" : "public",
+    "ids" : [
+      "s:10SteadyCore8LogEntryV9createdAt10Foundation4DateVvp"
+    ],
+    "kind" : "var.instance",
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Packages/SteadyCore/Sources/SteadyCore/LogEntry.swift:11:16"
+  },
+  {
+    "ids" : [
+      "s:6Steady16HealthKitManagerC19authorizationStatusSo015HKAuthorizationF0VyF"
+    ],
+    "modules" : [
+      "Steady"
+    ],
+    "kind" : "function.method.instance",
+    "accessibility" : "internal",
+    "hints" : [
+      "unused"
+    ],
+    "modifiers" : [
+
+    ],
+    "name" : "authorizationStatus()",
+    "attributes" : [
+
+    ],
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Steady/Services/HealthKitManager.swift:28:10"
+  },
+  {
+    "location" : "/Users/cade/dev/health-suite-dead-scan/Apps/Steady/Steady/Views/AssessmentsHubView.swift:6:46",
+    "ids" : [
+      "s:6Steady18AssessmentsHubViewV12modelContext33_3FCDEC00E8048FCDD8E298B376704717LL9SwiftData05ModelF0Cvp"
+    ],
+    "accessibility" : "private",
+    "kind" : "var.instance",
+    "name" : "modelContext",
+    "hints" : [
+      "unused"
+    ],
+    "modules" : [
+      "Steady"
+    ],
+    "attributes" : [
+      "Environment(\\.modelContext)"
+    ],
+    "modifiers" : [
+      "private"
+    ]
+  }
+]

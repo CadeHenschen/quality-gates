@@ -6,7 +6,8 @@
 // Like mutation and coverage, this package does not detect anything itself:
 // reachability analysis is language-specific and already done well by tools
 // the target repo runs in its own CI — `deadcode` (golang.org/x/tools) for
-// Go, `knip` for TypeScript/JavaScript, `vulture` for Python. It parses their JSON reports into
+// Go, `knip` for TypeScript/JavaScript, `vulture` for Python, `periphery` for
+// Swift. It parses their JSON reports into
 // one normalized model and gates on the count, with the same --only-files
 // ratchet as every other tool here.
 package deadcode
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -37,9 +39,10 @@ const (
 
 // Report formats, for Options.Format.
 const (
-	FormatDeadcode = "deadcode" // `deadcode -json` (Go)
-	FormatKnip     = "knip"     // `knip --reporter json` (TS/JS)
-	FormatVulture  = "vulture"  // `vulture` text output (Python)
+	FormatDeadcode  = "deadcode"  // `deadcode -json` (Go)
+	FormatKnip      = "knip"      // `knip --reporter json` (TS/JS)
+	FormatVulture   = "vulture"   // `vulture` text output (Python)
+	FormatPeriphery = "periphery" // `periphery scan --format json` (Swift)
 )
 
 // Finding is one piece of dead code.
@@ -63,7 +66,7 @@ type Options struct {
 
 // Parse reads a dead-code report, in opts.Format or else auto-detected:
 // `deadcode -json` (a JSON array of packages, or null), `knip --reporter
-// json` (an object with an `issues` array), or `vulture` text output
+// json` (an object with an `issues` array), or `periphery` JSON
 // (`file:line: unused function 'f' (60% confidence)`).
 func Parse(data []byte, opts Options) ([]Finding, error) {
 	format := opts.Format
@@ -82,8 +85,10 @@ func Parse(data []byte, opts Options) ([]Finding, error) {
 		found, err = parseKnip(data)
 	case FormatVulture:
 		found, err = parseVulture(data)
+	case FormatPeriphery:
+		found, err = parsePeriphery(data)
 	default:
-		return nil, fmt.Errorf("unknown --format %q (want %s, %s, or %s)", format, FormatDeadcode, FormatKnip, FormatVulture)
+		return nil, fmt.Errorf("unknown --format %q (want %s, %s, %s, or %s)", format, FormatDeadcode, FormatKnip, FormatVulture, FormatPeriphery)
 	}
 	if err != nil {
 		return nil, err
@@ -99,6 +104,8 @@ func detectFormat(data []byte) (string, error) {
 	switch {
 	case trimmed == "":
 		return "", fmt.Errorf("empty dead-code report: can't tell a clean run from a step that failed to run; for a clean vulture run (it prints nothing) pass --format %s", FormatVulture)
+	case strings.HasPrefix(trimmed, "[") && isPeripheryArray(data):
+		return FormatPeriphery, nil
 	case trimmed == "null" || strings.HasPrefix(trimmed, "["):
 		// `deadcode -json` prints a bare null, not [], when nothing is dead.
 		return FormatDeadcode, nil
@@ -107,7 +114,7 @@ func detectFormat(data []byte) (string, error) {
 	case vultureLine.MatchString(strings.SplitN(trimmed, "\n", 2)[0]):
 		return FormatVulture, nil
 	}
-	return "", fmt.Errorf("unrecognized dead-code report: want `deadcode -json` (Go), `knip --reporter json` (TS/JS) or `vulture` (Python) output")
+	return "", fmt.Errorf("unrecognized dead-code report: want `deadcode -json` (Go), `knip --reporter json` (TS/JS) `vulture` (Python) or `periphery` (Swift) output")
 }
 
 func normalizePath(file, dir string) string {
@@ -227,4 +234,72 @@ func vultureKind(word string) Kind {
 		return KindImport
 	}
 	return KindMember // variable, attribute, property
+}
+
+// isPeripheryArray tells a periphery report from a deadcode one — both are
+// JSON arrays — by its results carrying `hints`. Misreading one as the
+// other would parse to zero findings, a silent pass.
+func isPeripheryArray(data []byte) bool {
+	var first []map[string]json.RawMessage
+	if json.Unmarshal(data, &first) != nil || len(first) == 0 {
+		return false
+	}
+	_, ok := first[0]["hints"]
+	return ok
+}
+
+// parsePeriphery reads `periphery scan --format json`. Only results hinted
+// `unused` are dead code. `assignOnlyProperty` is deliberately dropped: on a
+// persisted model (Codable, SwiftData) a field written but never read in
+// code is usually read by the coder or the database. The `redundant*` hints
+// are API tidiness. Periphery scans the app scheme, not test targets, so
+// code only tests use is reported — the strict reading of "dead".
+func parsePeriphery(data []byte) ([]Finding, error) {
+	var results []struct {
+		Kind     string   `json:"kind"`
+		Name     string   `json:"name"`
+		Hints    []string `json:"hints"`
+		Location string   `json:"location"`
+	}
+	if err := json.Unmarshal(data, &results); err != nil {
+		return nil, fmt.Errorf("parse periphery report: %w", err)
+	}
+	var out []Finding
+	for _, r := range results {
+		if !slices.Contains(r.Hints, "unused") {
+			continue
+		}
+		file, line, err := splitPeripheryLocation(r.Location)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, Finding{File: file, Line: line, Name: r.Name, Kind: peripheryKind(r.Kind)})
+	}
+	return out, nil
+}
+
+// splitPeripheryLocation splits "path:line:col", from the right so a colon
+// in the path survives.
+func splitPeripheryLocation(loc string) (string, int, error) {
+	parts := strings.Split(loc, ":")
+	if len(parts) < 3 {
+		return "", 0, fmt.Errorf("parse periphery report: can't read location %q (want path:line:col)", loc)
+	}
+	line, err := strconv.Atoi(parts[len(parts)-2])
+	if err != nil {
+		return "", 0, fmt.Errorf("parse periphery report: can't read location %q (want path:line:col)", loc)
+	}
+	return strings.Join(parts[:len(parts)-2], ":"), line, nil
+}
+
+func peripheryKind(kind string) Kind {
+	switch base, _, _ := strings.Cut(kind, "."); base {
+	case "function":
+		return KindFunction
+	case "class", "struct", "enum", "protocol", "typealias", "associatedtype", "extension":
+		return KindType
+	case "module":
+		return KindImport
+	}
+	return KindMember // var.*, enumelement, ...
 }

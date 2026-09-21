@@ -212,3 +212,72 @@ func TestParseExplicitFormatOverridesDetection(t *testing.T) {
 		t.Errorf("got %v, %v", got, err)
 	}
 }
+
+// The periphery fixture is real `periphery scan --format json` output over
+// health-suite's Steady app: two unused symbols, three assign-only
+// properties (persisted model fields, which may be read by a coder or the
+// database, not code) and one redundant `public` (API tidiness).
+const peripheryDir = "/Users/cade/dev/health-suite-dead-scan/Apps/Steady"
+
+func TestParsePeripheryKeepsOnlyUnused(t *testing.T) {
+	got, err := Parse(fixture(t, "periphery.json"), Options{Dir: peripheryDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want only the 2 `unused` results, got %+v", got)
+	}
+	fn := find(t, got, "authorizationStatus()")
+	if fn.Kind != KindFunction || fn.File != "Steady/Services/HealthKitManager.swift" || fn.Line != 28 {
+		t.Errorf("fn = %+v", fn)
+	}
+	if v := find(t, got, "modelContext"); v.Kind != KindMember || v.Line != 6 {
+		t.Errorf("var = %+v", v)
+	}
+}
+
+func TestParsePeripheryKinds(t *testing.T) {
+	entry := func(kind, name string) string {
+		return `{"kind":"` + kind + `","name":"` + name + `","hints":["unused"],"location":"/p/A.swift:3:5"}`
+	}
+	in := "[" + strings.Join([]string{
+		entry("function.free", "f"), entry("function.constructor", "init"),
+		entry("enum", "E"), entry("struct", "S"), entry("class", "C"), entry("protocol", "P"), entry("typealias", "T"),
+		entry("var.global", "g"), entry("enumelement", "el"),
+		entry("module", "MoodyCore"),
+	}, ",") + "]"
+	got, err := Parse([]byte(in), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]Kind{
+		"f": KindFunction, "init": KindFunction,
+		"E": KindType, "S": KindType, "C": KindType, "P": KindType, "T": KindType,
+		"g": KindMember, "el": KindMember, "MoodyCore": KindImport,
+	}
+	for name, kind := range want {
+		if f := find(t, got, name); f.Kind != kind {
+			t.Errorf("%s kind = %s, want %s", name, f.Kind, kind)
+		}
+	}
+}
+
+// A periphery report is a JSON array like deadcode's; misreading it as
+// deadcode would silently find nothing, so detection must tell them apart.
+func TestParseDetectsPeripheryNotDeadcode(t *testing.T) {
+	in := `[{"kind":"enum","name":"E","hints":["unused"],"location":"/p/A.swift:9:2"}]`
+	got, err := Parse([]byte(in), Options{})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("auto-detect must route to periphery: %v, %v", got, err)
+	}
+	if got, err := Parse([]byte(`[]`), Options{Format: FormatPeriphery}); err != nil || len(got) != 0 {
+		t.Errorf("a clean periphery run is `[]`: %v, %v", got, err)
+	}
+}
+
+func TestParsePeripheryRejectsBadLocation(t *testing.T) {
+	in := `[{"kind":"enum","name":"E","hints":["unused"],"location":"nonsense"}]`
+	if _, err := Parse([]byte(in), Options{Format: FormatPeriphery}); err == nil || !strings.Contains(err.Error(), "nonsense") {
+		t.Errorf("an unreadable location must be an error naming it: %v", err)
+	}
+}

@@ -13,11 +13,6 @@ func (r Report) WriteJSON(w io.Writer) error {
 	return reportio.WriteJSON(w, r)
 }
 
-// ReadReport reads back a report written by WriteJSON.
-func ReadReport(r io.Reader) (Report, error) {
-	return reportio.ReadReport[Report](r)
-}
-
 // WriteTable writes a human-readable table of clones, largest first, to w.
 func (r Report) WriteTable(w io.Writer, top int) {
 	fmt.Fprintf(w, "%d duplicate block(s), %.2f%% of %d analyzed lines duplicated\n\n", len(r.Clones), r.DuplicationPercent, r.TotalLines)

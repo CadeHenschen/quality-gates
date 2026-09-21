@@ -17,7 +17,7 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
-| `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) reports and gates on the count | `--fail-above 0` (dead symbols) |
+| `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) / `periphery` (Swift) reports and gates on the count | `--fail-above 0` (dead symbols) |
 | `test-metric` | Can these tests actually fail? | `check`: parses test files for tests with no assertions, skips, `.only`, mock-only assertions, leaked temp dirs. `mutation`: gates on a mutation tool's score | `check --fail-above 0` (findings); `mutation --fail-below 60` (%) |
 
 The first four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
@@ -296,12 +296,11 @@ analysis is language-specific and the target repo's CI already owns it. It parse
 the tool's JSON report into one model and gates on the count:
 
 - **Go**: [`deadcode`](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) —
-  `deadcode -test -json ./... > deadcode.json`. Whole-program reachability from
-  every `main`; `-test` also counts test entry points, so a helper only tests
-  call isn't reported (drop it to find code only tests use). Generated files are skipped. A clean
-  run prints a bare `null`, which is a valid empty report.
-- **TypeScript/JS**: [`knip`](https://knip.dev) — `knip --reporter json > knip-report.json`
-  (knip exits 1 when it finds issues, so don't let that abort the step; and don't name the report `knip.json`, which is knip's own config filename and would be read as, or overwrite, the project's config). Unused
+  `deadcode -json ./... > deadcode.json`. Whole-program reachability from
+  every `main`. Deliberately **without `-test`**: see the policy below. Generated
+  files are skipped. A clean run prints a bare `null`, which is a valid empty report.
+- **TypeScript/JS**: [`knip`](https://knip.dev) — `knip --production --reporter json > knip-report.json`
+  (`--production` is the strict mode: it drops test files as entry points. knip exits 1 when it finds issues, so don't let that abort the step; and don't name the report `knip.json`, which is knip's own config filename and would be read as, or overwrite, the project's config). Unused
   files, exports, types, and enum/namespace members are read; unused *dependencies*
   are not (manifest hygiene, not dead code). knip needs its entry points configured
   (`knip.json`) to avoid reporting live code as dead. **Set
@@ -324,8 +323,27 @@ the tool's JSON report into one model and gates on the count:
   step that never ran, so auto-detect refuses it: pass `--format vulture` to accept an
   empty report as a clean pass.
 
+- **Swift**: [`periphery`](https://github.com/peripheryapp/periphery) —
+  `periphery scan --project App.xcodeproj --schemes App --format json --quiet > periphery.json`
+  (needs `xcodebuild`, so the mac-mini runner; about 10 s per app, and it also scans
+  the app's local SwiftPM packages). Only results hinted `unused` are read.
+  `assignOnlyProperty` is dropped on purpose: on a persisted model (Codable,
+  SwiftData) a field written but never read in code is usually read by the coder or
+  the database — 23 of the 46 results on health-suite's seven apps, none obviously
+  dead. `redundantPublicAccessibility` is API tidiness, not dead code. Periphery
+  results carry absolute paths, so pass `--dir` (the directory your `--only-files`
+  list is relative to).
+
+**Policy: code only tests use is dead.** Every language is run in its strict mode
+(no `deadcode -test`, `knip --production`, vulture over the app paths only, Periphery
+over the app scheme). A function nothing but its own tests calls is a feature that
+isn't there: delete it and its tests together, and if it ever comes back, write its
+spec and tests again from scratch rather than resurrecting tests for code no one asked
+for. The cost is that a core library's tested-but-unused helpers get flagged — that is
+the point.
+
 ```
-dead-metric --report deadcode.json [--format deadcode|knip|vulture] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
+dead-metric --report deadcode.json [--format deadcode|knip|vulture|periphery] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
 ```
 
 The format is auto-detected (only an empty vulture report needs `--format`). `--only-files` narrows the gate, never the report,
@@ -359,14 +377,14 @@ internal/
   cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
   testmetric/     testscanners/{golang,python,typescript,swift}  # static test-quality checks
   mutation/                                                # mutation-report parsing + score gate
-  deadcode/                                                # deadcode/knip/vulture report parsing, ignore list, count gate
+  deadcode/                                                # deadcode/knip/vulture/periphery report parsing, ignore list, count gate
 testdata/
   crap/{golang,python,typescript,typescript-ts7,javascript,swift}/
   dupe/{golang,python,typescript,typescript-ts7,javascript,swift}/
   escape/{golang,python,typescript,swift}/    # .js/.jsx fixtures live alongside typescript's — same "ts" language block
   cycle/{python,typescript,javascript}/
   test/{golang,python,typescript,swift}/  test/mutation/          # deliberately-bad tests; sample mutation reports
-  dead/{deadcode.json,knip.json,vulture.txt}  dead/{golang,python}/                    # real tool output, captured (not hand-written)
+  dead/{deadcode.json,knip.json,vulture.txt,periphery.json}  dead/{golang,python}/                    # real tool output, captured (not hand-written)
 ```
 
 Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`) and

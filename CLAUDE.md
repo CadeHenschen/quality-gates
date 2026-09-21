@@ -272,18 +272,20 @@ rule above. Lessons from building it, so they aren't re-learned:
   test; only `test.<skip|only|todo|fixme|each|…>` (`TEST_MODS`) are test
   declarations now. Both have regression fixtures.
 
-## dead-metric: ingest `deadcode`/`knip`/`vulture`, capture their real output
+## dead-metric: ingest `deadcode`/`knip`/`vulture`/`periphery`, capture their real output
 
 Same stance as mutation testing: the detector is someone else's mature
 tool, run by the target repo's CI; `internal/deadcode` only parses. Unlike
-the mutation fixtures, `testdata/dead/{deadcode.json,knip.json,vulture.txt}` are **real
+the mutation fixtures, `testdata/dead/{deadcode.json,knip.json,vulture.txt,periphery.json}` are **real
 captured output** (from `testdata/dead/golang` and a throwaway knip
 project), not hand-written from docs — and capturing them paid off
 immediately: dogfooding on this repo showed `deadcode -json` prints a bare
 `null`, not `[]`, when nothing is dead, which no docs-derived fixture
 would have had. Regenerate them from the tools, don't edit them.
-`-test` is deliberate in the self-check: without it, helpers only tests
-call are reported dead. Ignore-list entries exist for reflection/plugin
+**Strict on purpose: code only tests use is dead** (no `deadcode -test`,
+`knip --production`). The first self-check under it flagged
+`dupe.ReadReport`, a one-line wrapper only its own round-trip test called —
+deleted, with the test pointed at `reportio.ReadReport` directly. Ignore-list entries exist for reflection/plugin
 targets; add one with a comment saying *why* it's live, never to make a
 real finding go away.
 
@@ -297,6 +299,10 @@ tools own their thresholds. And vulture prints nothing when clean, so an
 empty report can't be told from a step that silently didn't run (CI has to
 swallow its exit code 3): auto-detect rejects empty input and
 `--format vulture` opts in, rather than a gate that passes on a broken step.
+Periphery's JSON is a top-level array like `deadcode`'s, so a misdetected one
+would parse to zero findings and pass silently — `Parse` tells them apart by the
+`hints` key (tested). Its `assignOnlyProperty` hint was 23 of 46 results on
+health-suite and mostly persisted-model fields, so only `unused` is read.
 
 ## This host's edge blocks Python urllib's default User-Agent
 

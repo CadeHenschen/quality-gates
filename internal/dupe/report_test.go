@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
 func TestWriteTableNoClones(t *testing.T) {
@@ -66,7 +68,7 @@ func TestWriteJSONRoundTrip(t *testing.T) {
 		t.Fatalf("WriteJSON: %v", err)
 	}
 
-	decoded, err := ReadReport(bytes.NewReader(buf.Bytes()))
+	decoded, err := reportio.ReadReport[Report](bytes.NewReader(buf.Bytes()))
 	if err != nil {
 		t.Fatalf("ReadReport: %v", err)
 	}

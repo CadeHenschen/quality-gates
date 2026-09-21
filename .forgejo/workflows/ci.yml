@@ -308,12 +308,12 @@ jobs:
         run: ./test-metric check --lang go --dir . --fail-above 0
 
       # dead-metric ingests `deadcode`'s report rather than detecting
-      # anything itself. `-test` counts test entry points, so a helper
-      # only tests use isn't called dead. Pinned; renovate can bump it.
+      # anything itself. No `-test`: code only tests use counts as dead
+      # (see README's dead-metric section). Pinned; renovate can bump it.
       - name: dead-metric check (self)
         run: |
           go install golang.org/x/tools/cmd/deadcode@v0.50.0
-          "$(go env GOPATH)/bin/deadcode" -test -json ./... > deadcode.json
+          "$(go env GOPATH)/bin/deadcode" -json ./... > deadcode.json
           ./dead-metric --report deadcode.json --fail-above 0
 
       # No cycle-metric self-check — see the post-merge "self-check"
@@ -415,7 +415,7 @@ jobs:
       - name: dead-metric check (self)
         run: |
           go install golang.org/x/tools/cmd/deadcode@v0.50.0
-          "$(go env GOPATH)/bin/deadcode" -test -json ./... > deadcode.json
+          "$(go env GOPATH)/bin/deadcode" -json ./... > deadcode.json
           go run ./cmd/dead-metric --report deadcode.json --fail-above 0
 
       # No cycle-metric self-check — it only analyzes Python/TS, and this
