@@ -300,8 +300,8 @@ the tool's JSON report into one model and gates on the count:
   every `main`; `-test` also counts test entry points, so a helper only tests
   call isn't reported (drop it to find code only tests use). Generated files are skipped. A clean
   run prints a bare `null`, which is a valid empty report.
-- **TypeScript/JS**: [`knip`](https://knip.dev) — `knip --reporter json > knip.json`
-  (knip exits 1 when it finds issues, so don't let that abort the step). Unused
+- **TypeScript/JS**: [`knip`](https://knip.dev) — `knip --reporter json > knip-report.json`
+  (knip exits 1 when it finds issues, so don't let that abort the step; and don't name the report `knip.json`, which is knip's own config filename and would be read as, or overwrite, the project's config). Unused
   files, exports, types, and enum/namespace members are read; unused *dependencies*
   are not (manifest hygiene, not dead code). knip needs its entry points configured
   (`knip.json`) to avoid reporting live code as dead. **Set
