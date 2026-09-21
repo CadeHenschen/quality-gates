@@ -25,6 +25,14 @@ type Report struct {
 	// score's denominator, so it measures assertion strength only — line
 	// coverage is crap-metric's job.
 	CoveredOnly bool `json:"covered_only"`
+	// Graded is the score's denominator: how many mutants got a verdict
+	// that counts toward it (so NoCoverage is out under CoveredOnly).
+	Graded int `json:"graded"`
+	// MinMutants and Insufficient record the --min-mutants waiver: with
+	// fewer than MinMutants graded, the score is noise (one survivor among
+	// three is 67%) and the gate passes rather than fail on chance.
+	MinMutants   int  `json:"min_mutants,omitempty"`
+	Insufficient bool `json:"insufficient,omitempty"`
 }
 
 // NewReport tallies mutants and applies the fail-below gate (a percentage).
@@ -47,11 +55,25 @@ func NewReport(mutants []Mutant, failBelow float64, coveredOnly bool) Report {
 	if !coveredOnly {
 		denom += r.NoCoverage
 	}
+	r.Graded = denom
 	r.Score = 100
 	if denom > 0 {
 		r.Score = float64(r.Detected) / float64(denom) * 100
 	}
 	r.Passed = r.Score >= failBelow
+	return r
+}
+
+// WithMinMutants applies the --min-mutants waiver: when fewer than n mutants
+// were graded the score is too noisy to gate on, so the report passes and
+// says why. n <= 0 disables it. Kept apart from NewReport so the score maths
+// stays a single tally; the ratchet's scoped report calls it too.
+func (r Report) WithMinMutants(n int) Report {
+	r.MinMutants = n
+	if n > 0 && r.Graded < n {
+		r.Insufficient = true
+		r.Passed = true
+	}
 	return r
 }
 
@@ -95,7 +117,9 @@ func (r Report) WriteTable(w io.Writer, top int) {
 		fmt.Fprintln(w)
 	}
 
-	if r.Passed {
+	if r.Insufficient {
+		fmt.Fprintf(w, "PASS: only %d graded mutants (fewer than --min-mutants %d), so the %.1f%% score is not enforced\n", r.Graded, r.MinMutants, r.Score)
+	} else if r.Passed {
 		fmt.Fprintf(w, "PASS: %.1f%% is at or above %.1f%%\n", r.Score, r.FailBelow)
 	} else {
 		fmt.Fprintf(w, "FAIL: %.1f%% is below %.1f%%\n", r.Score, r.FailBelow)

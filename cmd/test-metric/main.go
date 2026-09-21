@@ -25,7 +25,7 @@ import (
 
 const usage = `usage:
   test-metric check    --lang go|python|ts|swift --dir DIR [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--top N] [--only-files PATH] [--json PATH]
-  test-metric mutation --report PATH [--dir DIR] [--fail-below PCT] [--covered-only] [--top N] [--only-files PATH] [--json PATH]
+  test-metric mutation --report PATH [--dir DIR] [--fail-below PCT] [--covered-only] [--min-mutants N] [--top N] [--only-files PATH] [--json PATH]
   test-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -187,6 +187,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 	dir := fs.String("dir", "", "relativize absolute paths in the report to this directory")
 	failBelow := fs.Float64("fail-below", 60, "mutation score (percent) below which the gate fails")
 	coveredOnly := fs.Bool("covered-only", false, "leave never-executed mutants out of the score, so it measures assertion strength only (line coverage is crap-metric's job)")
+	minMutants := fs.Int("min-mutants", 0, "below this many graded mutants the score is too noisy to gate on: pass with a note instead of failing (0 = always enforce)")
 	top := fs.Int("top", 20, "number of surviving mutants to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list — ratchets the gate to mutants in these files; omit to score the whole report")
 	jsonOut := fs.String("json", "mutation-report.json", "path to write the full JSON report")
@@ -213,7 +214,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	report := mutation.NewReport(mutants, *failBelow, *coveredOnly)
+	report := mutation.NewReport(mutants, *failBelow, *coveredOnly).WithMinMutants(*minMutants)
 	report.WriteTable(stdout, *top)
 
 	if *jsonOut != "" {
@@ -226,7 +227,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scoped := mutation.NewReport(filterMutants(mutants, onlyFiles), *failBelow, *coveredOnly)
+	scoped := mutation.NewReport(filterMutants(mutants, onlyFiles), *failBelow, *coveredOnly).WithMinMutants(*minMutants)
 	fmt.Fprintf(stdout, "\nratchet scope: %d mutant(s) in changed files, %.1f%% score\n", len(scoped.Mutants), scoped.Score)
 	verdict := "PASS"
 	if !scoped.Passed {

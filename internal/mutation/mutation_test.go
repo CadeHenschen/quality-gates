@@ -140,3 +140,50 @@ func TestWriteTablePass(t *testing.T) {
 		t.Errorf("unexpected table:\n%s", sb.String())
 	}
 }
+
+func TestMinMutantsWaivesTheGateOnTooFewVerdicts(t *testing.T) {
+	// gremlins.json: 2 detected, 1 survived, 1 not covered = 4 graded, 50%.
+	mutants := parseFixture(t, "gremlins.json", Options{})
+
+	if r := NewReport(mutants, 60, false); r.Graded != 4 || r.Passed {
+		t.Fatalf("baseline: graded=%d passed=%v, want 4 graded and a failing 50%%", r.Graded, r.Passed)
+	}
+	// At or below the graded count the score is still enforced.
+	if r := NewReport(mutants, 60, false).WithMinMutants(4); r.Passed || r.Insufficient {
+		t.Errorf("min 4 of 4 graded: passed=%v insufficient=%v, want enforced and failing", r.Passed, r.Insufficient)
+	}
+	// Above it, the score is noise: pass with a note.
+	r := NewReport(mutants, 60, false).WithMinMutants(5)
+	if !r.Passed || !r.Insufficient || r.MinMutants != 5 {
+		t.Errorf("min 5 of 4 graded: %+v, want passed + insufficient", r)
+	}
+	var sb strings.Builder
+	r.WriteTable(&sb, 0)
+	if !strings.Contains(sb.String(), "PASS: only 4 graded mutants (fewer than --min-mutants 5)") {
+		t.Errorf("table = %q", sb.String())
+	}
+	// 0 (the default) never waives anything.
+	if r := NewReport(mutants, 60, false).WithMinMutants(0); r.Passed || r.Insufficient {
+		t.Errorf("min 0: %+v, want enforced", r)
+	}
+}
+
+func TestMinMutantsCountsOnlyWhatTheScoreCounts(t *testing.T) {
+	// --covered-only drops the never-executed mutant from the score, so it
+	// must drop out of the graded count too: 3 graded, not 4.
+	mutants := parseFixture(t, "gremlins.json", Options{})
+	r := NewReport(mutants, 60, true)
+	if r.Graded != 3 {
+		t.Fatalf("covered-only graded = %d, want 3", r.Graded)
+	}
+	if r := r.WithMinMutants(4); !r.Insufficient {
+		t.Errorf("min 4 of 3 covered-only graded: %+v, want insufficient", r)
+	}
+}
+
+func TestMinMutantsNothingGradedStaysPassing(t *testing.T) {
+	r := NewReport(nil, 60, false).WithMinMutants(10)
+	if !r.Passed || r.Graded != 0 {
+		t.Errorf("empty report: %+v", r)
+	}
+}

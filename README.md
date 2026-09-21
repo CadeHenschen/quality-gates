@@ -91,7 +91,7 @@ dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
 test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--only-files PATH] [--json PATH]
-test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--only-files PATH] [--json PATH]
+test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--min-mutants N] [--only-files PATH] [--json PATH]
 <any tool>    version
 ```
 
@@ -275,7 +275,12 @@ The format is auto-detected. Score = `(killed + timeout) / (killed + timeout
 + survived + no-coverage)`; mutants with no verdict (compile errors, not
 viable, skipped) are left out. `--covered-only` also leaves out
 never-executed mutants so the score measures assertion strength alone —
-line coverage is crap-metric's job. `--fail-below` defaults to `60`. The
+line coverage is crap-metric's job. `--fail-below` defaults to `60`.
+`--min-mutants N` (default `0`, always enforce) waives the gate when fewer than
+`N` mutants were graded — a score over a handful of mutants is noise (one
+survivor among 3 is 67%), so it passes with a note instead of failing on chance;
+the count follows `--covered-only`, and the ratchet's scoped score gets the same
+waiver. The
 table lists surviving mutants (`file:line`, mutator). `--dir` relativizes
 absolute paths in the report, and `--only-files` re-scores just the
 touched files' mutants — the practical way to run this in PR CI, since a

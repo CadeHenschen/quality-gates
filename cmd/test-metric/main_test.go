@@ -215,6 +215,36 @@ func TestMutationGate(t *testing.T) {
 	}
 }
 
+func TestMutationMinMutants(t *testing.T) {
+	report := "../../testdata/test/mutation/gremlins.json" // 4 graded mutants, 50%: fails the default gate
+
+	code, stdout, _ := exec("mutation", "--report", report, "--json", "", "--min-mutants", "5")
+	if code != 0 || !strings.Contains(stdout, "PASS: only 4 graded mutants (fewer than --min-mutants 5)") {
+		t.Errorf("--min-mutants 5: code=%d\n%s", code, stdout)
+	}
+	if code, _, _ := exec("mutation", "--report", report, "--json", "", "--min-mutants", "4"); code != 1 {
+		t.Errorf("--min-mutants 4: code = %d, want 1 (enough mutants to enforce)", code)
+	}
+
+	// The ratcheted scope gets the same waiver: calc.go alone has 3 graded
+	// mutants at 33%, which fails at min 3 and is waived at min 4.
+	touched := filepath.Join(t.TempDir(), "calc.txt")
+	if err := os.WriteFile(touched, []byte("internal/calc/calc.go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := exec("mutation", "--report", report, "--json", "", "--fail-below", "10", "--only-files", touched, "--min-mutants", "4"); code != 0 {
+		t.Errorf("ratchet + waiver: code = %d, want 0", code)
+	}
+	code, stdout, _ = exec("mutation", "--report", report, "--json", "", "--only-files", touched, "--min-mutants", "4")
+	if code != 0 || !strings.Contains(stdout, "PASS (ratcheted)") {
+		t.Errorf("ratchet waives scope with too few mutants: code=%d\n%s", code, stdout)
+	}
+	code, _, _ = exec("mutation", "--report", report, "--json", "", "--only-files", touched, "--min-mutants", "3")
+	if code != 1 {
+		t.Errorf("ratchet at min 3 of 3: code = %d, want 1", code)
+	}
+}
+
 func TestMutationRatchetScopesTheGateNotTheReport(t *testing.T) {
 	report := "../../testdata/test/mutation/gremlins.json"
 	dir := t.TempDir()
