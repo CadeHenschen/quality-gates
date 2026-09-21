@@ -1,9 +1,9 @@
 # quality-gates
 
-Five CI quality gate CLIs (Go), one module, for repos on
+Six CI quality gate CLIs (Go), one module, for repos on
 `git.roost-r.com/cadeh`: `crap-metric` (complexity × undertested),
 `dupe-metric` (duplication), `escape-metric` (suppressed checks),
-`cycle-metric` (import cycles), `test-metric` (test quality). See [README.md](README.md) for the
+`cycle-metric` (import cycles), `test-metric` (test quality), `dead-metric` (unused code). See [README.md](README.md) for the
 formula/algorithm, CLI usage, and architecture.
 
 This repo is a 2026-09-05 merge of four previously-standalone repos of
@@ -271,6 +271,32 @@ rule above. Lessons from building it, so they aren't re-learned:
   `beforeEach`/`test.step(...)` as tests, reporting an anonymous "no-assertions"
   test; only `test.<skip|only|todo|fixme|each|…>` (`TEST_MODS`) are test
   declarations now. Both have regression fixtures.
+
+## dead-metric: ingest `deadcode`/`knip`/`vulture`, capture their real output
+
+Same stance as mutation testing: the detector is someone else's mature
+tool, run by the target repo's CI; `internal/deadcode` only parses. Unlike
+the mutation fixtures, `testdata/dead/{deadcode.json,knip.json,vulture.txt}` are **real
+captured output** (from `testdata/dead/golang` and a throwaway knip
+project), not hand-written from docs — and capturing them paid off
+immediately: dogfooding on this repo showed `deadcode -json` prints a bare
+`null`, not `[]`, when nothing is dead, which no docs-derived fixture
+would have had. Regenerate them from the tools, don't edit them.
+`-test` is deliberate in the self-check: without it, helpers only tests
+call are reported dead. Ignore-list entries exist for reflection/plugin
+targets; add one with a comment saying *why* it's live, never to make a
+real finding go away.
+
+Run each ingested tool on a real codebase before recommending a
+configuration — the defaults are wrong in a way only that shows. knip on
+d_amp_d: 32 findings by default, 8 real with `ignoreExportsUsedInFile`.
+vulture on grounded's FastAPI backend: 225 findings at its default 60%
+confidence, *every one* a framework-registered route/column/field, and 0 at
+`--min-confidence 80`. Both fixes live in the README, not in code: the
+tools own their thresholds. And vulture prints nothing when clean, so an
+empty report can't be told from a step that silently didn't run (CI has to
+swallow its exit code 3): auto-detect rejects empty input and
+`--format vulture` opts in, rather than a gate that passes on a broken step.
 
 ## This host's edge blocks Python urllib's default User-Agent
 

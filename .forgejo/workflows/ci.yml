@@ -144,11 +144,13 @@ jobs:
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o escape-metric-linux-amd64   ./cmd/escape-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o cycle-metric-linux-amd64    ./cmd/cycle-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o test-metric-linux-amd64     ./cmd/test-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dead-metric-linux-amd64     ./cmd/dead-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o crap-metric-darwin-arm64    ./cmd/crap-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o escape-metric-darwin-arm64  ./cmd/escape-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o test-metric-darwin-arm64    ./cmd/test-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dead-metric-darwin-arm64    ./cmd/dead-metric
 
       - name: Create release and upload binaries
         env:
@@ -184,7 +186,7 @@ jobs:
             fi
           fi
 
-          for BIN in crap-metric dupe-metric escape-metric cycle-metric test-metric; do
+          for BIN in crap-metric dupe-metric escape-metric cycle-metric test-metric dead-metric; do
             for PLATFORM in linux-amd64 darwin-arm64; do
               curl -sS -X POST -H "Authorization: token $TOKEN" \
                 -F "attachment=@${BIN}-${PLATFORM}" \
@@ -267,7 +269,7 @@ jobs:
       # CLAUDE.md's "Releases are for distribution only" entry). No
       # -ldflags version needed here; this build never leaves the job.
       - name: Build binaries
-        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric ./cmd/test-metric
+        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric ./cmd/test-metric ./cmd/dead-metric
 
       # Same "SKIP means a dependency is missing" assertion as the "test"
       # and post-merge "self-check" jobs.
@@ -304,6 +306,15 @@ jobs:
       # subcommand only parses a report a repo's own CI produces.
       - name: test-metric check (self)
         run: ./test-metric check --lang go --dir . --fail-above 0
+
+      # dead-metric ingests `deadcode`'s report rather than detecting
+      # anything itself. `-test` counts test entry points, so a helper
+      # only tests use isn't called dead. Pinned; renovate can bump it.
+      - name: dead-metric check (self)
+        run: |
+          go install golang.org/x/tools/cmd/deadcode@v0.50.0
+          "$(go env GOPATH)/bin/deadcode" -test -json ./... > deadcode.json
+          ./dead-metric --report deadcode.json --fail-above 0
 
       # No cycle-metric self-check — see the post-merge "self-check"
       # job's matching note: it only analyzes Python/TS, and this repo is
@@ -400,6 +411,12 @@ jobs:
       # depend on a change in another repo.
       - name: test-metric check (self)
         run: go run ./cmd/test-metric check --lang go --dir . --fail-above 0
+
+      - name: dead-metric check (self)
+        run: |
+          go install golang.org/x/tools/cmd/deadcode@v0.50.0
+          "$(go env GOPATH)/bin/deadcode" -test -json ./... > deadcode.json
+          go run ./cmd/dead-metric --report deadcode.json --fail-above 0
 
       # No cycle-metric self-check — it only analyzes Python/TS, and this
       # repo is Go, so there's no source of its own it could check. See

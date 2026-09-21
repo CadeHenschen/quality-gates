@@ -1,0 +1,44 @@
+[
+	{
+		"Name": "main",
+		"Path": "example.com/deadfixture",
+		"Funcs": [
+			{
+				"Name": "orphan",
+				"Position": {
+					"File": "main.go",
+					"Line": 14,
+					"Col": 6
+				},
+				"Generated": false,
+				"Marker": false
+			}
+		]
+	},
+	{
+		"Name": "util",
+		"Path": "example.com/deadfixture/util",
+		"Funcs": [
+			{
+				"Name": "Unused",
+				"Position": {
+					"File": "util/util.go",
+					"Line": 8,
+					"Col": 6
+				},
+				"Generated": false,
+				"Marker": false
+			},
+			{
+				"Name": "Thing.Method",
+				"Position": {
+					"File": "util/util.go",
+					"Line": 13,
+					"Col": 14
+				},
+				"Generated": false,
+				"Marker": false
+			}
+		]
+	}
+]

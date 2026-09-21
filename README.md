@@ -1,7 +1,7 @@
 # quality-gates
 
-Five CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
-**escape-metric**, **cycle-metric**, and **test-metric**. Each answers a different
+Six CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
+**escape-metric**, **cycle-metric**, **test-metric**, and **dead-metric**. Each answers a different
 question about a change, with a deliberately different, appropriately-
 scoped detection method — but they share enough (the `--only-files`
 ratchet mechanism, the CI/release plumbing, the install pattern) that
@@ -9,7 +9,7 @@ running them as four separate repos meant four copies of that shared
 logic drifting independently. Migrated into one module for exactly that
 reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 
-## The five gates
+## The six gates
 
 | Binary | Question | Method | Default gate |
 |---|---|---|---|
@@ -17,6 +17,7 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
+| `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) reports and gates on the count | `--fail-above 0` (dead symbols) |
 | `test-metric` | Can these tests actually fail? | `check`: parses test files for tests with no assertions, skips, `.only`, mock-only assertions, leaked temp dirs. `mutation`: gates on a mutation tool's score | `check --fail-above 0` (findings); `mutation --fail-below 60` (%) |
 
 The first four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
@@ -286,11 +287,69 @@ absolute paths in the report, and `--only-files` re-scores just the
 touched files' mutants — the practical way to run this in PR CI, since a
 full mutation run is slow but a per-changed-file one isn't.
 
+### dead-metric: is there code nothing uses?
+
+Unused functions, exports and files are the cheapest simplification there is:
+deleting them costs nothing at runtime and shrinks everything else's surface.
+Like test-metric's mutation gate, dead-metric doesn't run a detector — reachability
+analysis is language-specific and the target repo's CI already owns it. It parses
+the tool's JSON report into one model and gates on the count:
+
+- **Go**: [`deadcode`](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) —
+  `deadcode -test -json ./... > deadcode.json`. Whole-program reachability from
+  every `main`; `-test` also counts test entry points, so a helper only tests
+  call isn't reported (drop it to find code only tests use). Generated files are skipped. A clean
+  run prints a bare `null`, which is a valid empty report.
+- **TypeScript/JS**: [`knip`](https://knip.dev) — `knip --reporter json > knip.json`
+  (knip exits 1 when it finds issues, so don't let that abort the step). Unused
+  files, exports, types, and enum/namespace members are read; unused *dependencies*
+  are not (manifest hygiene, not dead code). knip needs its entry points configured
+  (`knip.json`) to avoid reporting live code as dead. **Set
+  `"ignoreExportsUsedInFile": true`**: by default knip calls an export unused when
+  only its own file uses it, which is a live symbol with a needless `export`, not
+  dead code. On a real React app (d_amp_d) that one setting took 32 findings to 8,
+  and the 8 were genuine: unused re-export shims and a hook nothing called.
+
+- **Python**: [`vulture`](https://github.com/jendrikseipp/vulture) —
+  `vulture --min-confidence 80 src > vulture.txt || true` (vulture exits 3 when it
+  finds anything). Text output only; imports, functions, classes, methods,
+  variables/attributes, and unreachable/unsatisfiable code are read. **Always pass
+  `--min-confidence 80`**: vulture's default 60% tier guesses at anything not called
+  by name, and frameworks call everything by registration. On a real FastAPI app
+  (grounded) it flagged 225 symbols at 60% — every route handler, ORM column, pydantic
+  field and enum member, all live — and 0 at 80%+. What survives 80% (unused imports,
+  unused arguments, unreachable code) is nearly always real. Use vulture's
+  `--ignore-decorators` / `--ignore-names` for the rest, or this tool's `--ignore`.
+  **A clean vulture run prints nothing**, and an empty file is indistinguishable from a
+  step that never ran, so auto-detect refuses it: pass `--format vulture` to accept an
+  empty report as a clean pass.
+
+```
+dead-metric --report deadcode.json [--format deadcode|knip|vulture] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
+```
+
+The format is auto-detected (only an empty vulture report needs `--format`). `--only-files` narrows the gate, never the report,
+like every other tool. `--dir` relativizes absolute paths in the report.
+
+**`--ignore FILE`** is the allowlist for code that is live in fact but dead to the
+analyzer — reflection targets, plugin entry points, a library's public API.
+Without it the false positives get the gate switched off. One entry per line,
+`#` comments allowed:
+
+```
+Registered            # a symbol name (also covers the method Thing.Registered)
+internal/gen/         # a path prefix
+**/*_gen.go           # a path glob (`**/` = any depth, `*` never crosses `/`)
+*.pb.go               # a glob with no `/` matches the base name
+```
+
+Ignored findings are dropped from both the report and the gate.
+
 ## Architecture
 
 ```
 cmd/
-  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/    test-metric/
+  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/    test-metric/    dead-metric/
 internal/
   ratchet/                        # shared --only-files primitives
   swiftlex/                       # native Swift lexer, shared by analyzers/tokenizers/testscanners below
@@ -300,12 +359,14 @@ internal/
   cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
   testmetric/     testscanners/{golang,python,typescript,swift}  # static test-quality checks
   mutation/                                                # mutation-report parsing + score gate
+  deadcode/                                                # deadcode/knip/vulture report parsing, ignore list, count gate
 testdata/
   crap/{golang,python,typescript,typescript-ts7,javascript,swift}/
   dupe/{golang,python,typescript,typescript-ts7,javascript,swift}/
   escape/{golang,python,typescript,swift}/    # .js/.jsx fixtures live alongside typescript's — same "ts" language block
   cycle/{python,typescript,javascript}/
   test/{golang,python,typescript,swift}/  test/mutation/          # deliberately-bad tests; sample mutation reports
+  dead/{deadcode.json,knip.json,vulture.txt}  dead/{golang,python}/                    # real tool output, captured (not hand-written)
 ```
 
 Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`) and
@@ -323,14 +384,14 @@ tool has its own `golang/sample.go`).
 ## Status
 
 CI (`.forgejo/workflows/ci.yml`) builds/vets/tests the whole module on
-every push and PR; on `main`, it also builds all five `linux/amd64` and
+every push and PR; on `main`, it also builds all six `linux/amd64` and
 `darwin/arm64` binaries (the latter for the mac-mini runner), each with
 `-ldflags "-X main.version=<short-sha>"` baked in, and publishes them to
 **one** Forgejo release tagged with that same short commit SHA — pure
 distribution, no report data attached, so the release job also prunes
 releases down to the newest 20 after each push. It then self-checks
-crap-metric/dupe-metric/escape-metric/test-metric against the repo's own (now much
-larger, all-five-tools) Go source — cycle-metric still can't self-check,
+crap-metric/dupe-metric/escape-metric/test-metric/dead-metric against the repo's own (now much
+larger, all-six-tools) Go source — cycle-metric still can't self-check,
 being Go-only in implementation but not supporting Go analysis.
 crap-metric's self-check trend-diffs against the previous run's report,
 read from (and then advanced on) a dedicated `reports` branch — one
@@ -339,7 +400,7 @@ commit per run, `crap-report.json` only — rather than a release asset.
 Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
 `install-quality-gates` action (which replaced four separate
 `install-*-metric` actions; it still needs a one-line addition to fetch
-`test-metric`, which the release job already publishes); that action's optional `version` input pins
+`test-metric` and `dead-metric`, which the release job already publishes); that action's optional `version` input pins
 to a specific release tag instead of always floating on `latest`.
 
 ## Development

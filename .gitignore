@@ -3,11 +3,14 @@
 /escape-metric
 /cycle-metric
 /test-metric
+/dead-metric
 crap-report.json
 dupe-report.json
 escape-report.json
 cycle-report.json
 test-report.json
 mutation-report.json
+/dead-report.json
+/deadcode.json
 node_modules/
 .claude/
