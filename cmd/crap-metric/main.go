@@ -20,7 +20,7 @@ import (
 )
 
 const usage = `usage:
-  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--top N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
+  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--top N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
   crap-metric diff --old PATH --new PATH [--top N] [--json]
   crap-metric version`
 
@@ -63,6 +63,10 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Float64("fail-above", 30, "CRAP score above which the gate fails")
 	top := fs.Int("top", 20, "number of hotspot rows to print (0 = all)")
 	verbose := fs.Bool("verbose", false, "show each hotspot's uncovered line ranges")
+	maxLines := fs.Int("max-lines", 80, "function length (lines) above which the gate fails; <=0 disables")
+	maxParams := fs.Int("max-params", 6, "parameter count above which the gate fails; <=0 disables")
+	maxNesting := fs.Int("max-nesting", 5, "control-flow nesting depth above which the gate fails; <=0 disables")
+	maxFileLines := fs.Int("max-file-lines", 600, "file length (lines) above which the gate fails; <=0 disables")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to only functions in these files, so pre-existing hotspots elsewhere don't block; omit to check the whole --dir as before")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "glob of --dir-relative files to drop from analysis entirely (repeatable; e.g. 'internal/gen/**', '**/*_pb.go'). Unlike --only-files this removes files from the report too")
@@ -89,25 +93,20 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	patterns, err := loadExcludePatterns(*dir, *excludeFile, excludes, stdout)
+	fns, err = applyExcludes(*dir, *excludeFile, excludes, fns, stdout)
 	if err != nil {
-		fmt.Fprintln(stderr, "crap-metric: reading exclude file:", err)
+		fmt.Fprintln(stderr, "crap-metric:", err)
 		return 2
 	}
-	excluded, err := exclude.Compile(patterns)
-	if err != nil {
-		fmt.Fprintln(stderr, "crap-metric: bad --exclude pattern:", err)
-		return 2
-	}
-	fns, nExcluded := dropExcluded(fns, excluded)
-	if nExcluded > 0 {
-		fmt.Fprintf(stdout, "excluded: %d function(s) by --exclude\n\n", nExcluded)
+
+	sizeThresholds := crap.SizeThresholds{
+		MaxLines: *maxLines, MaxParams: *maxParams, MaxNesting: *maxNesting, MaxFileLines: *maxFileLines,
 	}
 
 	// The full report (every function in --dir) is always what gets
 	// printed and written to --json — --only-files narrows the *gate*
 	// only, so nothing is hidden, just not blocking.
-	report := crap.NewReport(fns, *failAbove)
+	report := crap.NewReport(fns, *failAbove).WithSize(sizeThresholds)
 	report.WriteTable(stdout, *top, *verbose)
 
 	if *jsonOut != "" {
@@ -121,12 +120,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scoped := crap.NewReport(filterFunctions(fns, onlyFiles), *failAbove)
+	scoped := crap.NewReport(filterFunctions(fns, onlyFiles), *failAbove).WithSize(sizeThresholds)
 	fmt.Fprintf(stdout, "\nratchet scope: %d function(s) in changed files\n", len(scoped.Functions))
 	if scoped.Passed {
-		fmt.Fprintf(stdout, "PASS (ratcheted): no changed function exceeds CRAP %.1f\n", *failAbove)
+		fmt.Fprintf(stdout, "PASS (ratcheted): no changed function exceeds CRAP %.1f or a size threshold\n", *failAbove)
 	} else {
-		fmt.Fprintf(stdout, "FAIL (ratcheted): at least one changed function exceeds CRAP %.1f\n", *failAbove)
+		fmt.Fprintf(stdout, "FAIL (ratcheted): at least one changed function exceeds CRAP %.1f or a size threshold\n", *failAbove)
 	}
 	return scoped.ExitCode()
 }

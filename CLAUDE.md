@@ -434,3 +434,92 @@ consumer repos doesn't need major/minor/patch meaning yet, and the short
 SHA plus a real `version` output already answers "what am I running" and
 "can I pin a known-good build" — don't add semver machinery here unless an
 actual consumer need shows up for it.
+
+## crap-metric: size/shape gate is extra fields on `crap.Function`, not a fifth tool
+
+CRAP's cyclomatic count and dupe-metric's duplication check both miss a
+readability failure mode neither is shaped to catch: a flat 40-case
+switch scores *high* on cyclomatic complexity but reads fine, while a
+6-deep nested `if` scores *low* but is unreadable. Every language
+analyzer already parses each function once for complexity — function
+length, parameter count, nesting depth, and file length fall out of that
+same parse almost for free, so they're extra fields on `crap.Function`
+(`ParamCount`, `MaxNestingDepth`, `FileLines`) and a `SizeThresholds`
+gate layered on `crap.Report` via `WithSize` (mirroring
+`internal/mutation`'s `WithMinMutants`: kept apart from `NewReport` so
+the CRAP score math stays a single pass), rather than a fifth CLI.
+Function length itself isn't a stored field at all —
+`Function.LineCount()` derives it from `EndLine - StartLine + 1`, which
+every analyzer already sets.
+
+**Nesting depth's else-if/elif flattening is the one subtle design
+choice, and it's the same reasoning size-metric exists for in the first
+place**: a chained `else if`/`elif` reads like a switch's cases, so it
+must NOT nest deeper than its `if` — only a genuine nested block should
+add a level. Go/TypeScript/Swift all get this from their real AST/token
+structure directly (an "else if" is the next `if` sitting where the
+`else` branch would be, so recursing at the *same* depth rather than
+`depth+1` flattens it correctly). Python's `ast` module can't make this
+distinction at all: `elif b:` and `else:\n    if b:` parse to the
+*identical* tree (`orelse=[If(...)]`) — there's no way to tell a real
+elif from a deliberately nested `else: if` short of comparing source
+column offsets. Documented as a known limitation in
+`internal/analyzers/python/size_facts.py` rather than solved — same
+posture as escape-metric's regex-only v1 scope and swiftlex's documented
+lexical gaps elsewhere in this file, and harmless in practice since
+nobody writes `else: if` when `elif` says the same thing.
+
+**A real bug caught during dogfooding, not a hypothetical**: the first
+version of Swift's nesting-depth walker (`internal/analyzers/swift/size.go`)
+classified control-flow keywords (`if`/`guard`/`while`/`for`/`switch`/
+`catch`) by scanning every keyword token in a function's body span,
+without regard to whether that keyword lexically belonged to the
+function itself or to a **nested local func** inside it. Since
+`internal/analyzers/swift/functions.go`'s own complexity walk
+deliberately *does* let a nested local func's branches fold into the
+enclosing function's complexity count (see the Swift support entry
+above), it was easy to assume nesting depth should do the same — but a
+nested func is a separate lexical scope, and letting its internal `if`s
+count toward the *enclosing* function's reported nesting depth is a
+correctness bug, not a design choice: `TestAnalyzeStampsSizeFields`'s
+`withNestedHelper` case (a nested func with its own doubly-nested `if`)
+caught it immediately by reporting nesting 2 for a function whose own
+body is a single flat `return`. Fixed by having
+`classifyControlBraces` jump straight past a nested func's whole body
+(via the same `swiftlex.FindFuncBodyOpen`/`MatchBrace` pair
+`extractFunctions` already uses to skip it) rather than walking into it
+— the same "opaque nested closure" choice the Go analyzer makes
+structurally for free (its walker only follows `ast.IfStmt`/`ForStmt`/
+etc.'s own statement lists, never descending into a `FuncLit`), and the
+safe under-counting direction for a generous, egregious-cases-only gate
+either way.
+
+**File length is stamped onto every function in that file** (same
+`FileLines` value repeated), not tracked as a separate per-file report —
+keeps it as "extra fields on `crap.Function`" per the design above, and
+`sizeFindings` dedupes it back down to one finding per file. Known
+limitation, same shape as the ratchet's suffix-match caveat above: a
+file with zero functions (an interface/type-only file, a config-like
+file with only top-level declarations) is invisible to the file-length
+gate, since there's no `crap.Function` to stamp it onto. Not worth a
+separate per-file walk in every one of four analyzers for what should be
+a rare case in practice.
+
+**Defaults were picked by running the gate against this repo's own real
+source, not guessed** — same discipline as dupe-metric's 18% self-check
+threshold and dead-metric's vulture/knip confidence tuning above.
+`--max-lines 80`/`--max-params 6` come straight from the sizes named
+when this gate was speced. `--max-nesting` and `--max-file-lines`
+didn't have a speced number, so they were set from this repo's own
+observed maximums at the time (nesting 4, `internal/swiftlex/lexer.go`
+at 484 lines) plus headroom: nesting settled on 5 (4 had *zero*
+headroom — any new function reaching depth 5 anywhere would've broken
+self-check immediately) and file length on 600. `--max-lines 80` itself
+is tighter than it looks: `cmd/crap-metric/main.go`'s own `runCheck` hit
+84 lines while this gate was being wired up (adding four new flags to an
+already-76-line function) and had to be refactored — the exclude-file-
+loading sequence pulled out into `applyExcludes` in `exclude.go` — to
+fit back under its own new gate before this could ship. The tool finding
+a gap in itself, closed with a real refactor rather than a raised
+threshold, is the same loop already described in the CI self-checks
+entry above.

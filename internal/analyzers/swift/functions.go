@@ -6,6 +6,8 @@ type rawFunc struct {
 	name               string
 	startLine, endLine int
 	complexity         int
+	paramCount         int
+	maxNestingDepth    int
 }
 
 var typeKeywords = map[string]bool{
@@ -69,10 +71,12 @@ func extractFunctions(toks []swiftlex.Token) []rawFunc {
 			name := funcQualifiedName(toks, i, typeStack)
 			endIdx, complexity := scanFunctionBody(toks, bodyOpen)
 			out = append(out, rawFunc{
-				name:       name,
-				startLine:  t.Line,
-				endLine:    toks[endIdx].Line,
-				complexity: complexity,
+				name:            name,
+				startLine:       t.Line,
+				endLine:         toks[endIdx].Line,
+				complexity:      complexity,
+				paramCount:      paramCount(toks, i),
+				maxNestingDepth: maxNestingDepth(toks, bodyOpen, endIdx),
 			})
 			i = endIdx + 1
 

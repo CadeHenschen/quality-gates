@@ -105,6 +105,81 @@ function complexityOf(body) {
   return c;
 }
 
+// nestingDepthOf mirrors the Go analyzer's algorithm (see
+// internal/analyzers/golang/size.go): each control-flow block adds one
+// level, but a chained `else if` does NOT nest deeper than its `if` — it
+// reads like a switch's cases, the same reasoning size-metric exists for.
+// Nested function expressions/arrow functions are opaque here (their own
+// internal nesting isn't walked), the safe direction for a generous gate.
+function nestingDepthOf(body) {
+  function stmtDepth(node, depth) {
+    switch (node.kind) {
+      case ts.SyntaxKind.IfStatement:
+        return ifDepth(node, depth);
+      case ts.SyntaxKind.ForStatement:
+      case ts.SyntaxKind.ForInStatement:
+      case ts.SyntaxKind.ForOfStatement:
+      case ts.SyntaxKind.WhileStatement:
+      case ts.SyntaxKind.DoStatement:
+        return blockDepth(node.statement, depth + 1);
+      case ts.SyntaxKind.SwitchStatement:
+        return clausesDepth(node.caseBlock.clauses, depth);
+      case ts.SyntaxKind.TryStatement: {
+        let m = blockDepth(node.tryBlock, depth + 1);
+        if (node.catchClause) m = Math.max(m, blockDepth(node.catchClause.block, depth + 1));
+        if (node.finallyBlock) m = Math.max(m, blockDepth(node.finallyBlock, depth + 1));
+        return m;
+      }
+      case ts.SyntaxKind.Block:
+        return blockDepth(node, depth + 1);
+      default:
+        return depth;
+    }
+  }
+  // blockDepth evaluates a statement position (a real Block, or a single
+  // braceless statement, e.g. `if (x) foo();`) whose own contents sit at
+  // depth — either walks the block's statements at that depth, or (no
+  // braces) treats the lone statement as if it were the sole entry of one.
+  function blockDepth(node, depth) {
+    if (!node) return depth;
+    if (node.kind === ts.SyntaxKind.Block) {
+      let m = depth;
+      for (const s of node.statements) {
+        m = Math.max(m, stmtDepth(s, depth));
+      }
+      return m;
+    }
+    return stmtDepth(node, depth);
+  }
+  function ifDepth(node, depth) {
+    let m = blockDepth(node.thenStatement, depth + 1);
+    if (node.elseStatement) {
+      if (node.elseStatement.kind === ts.SyntaxKind.IfStatement) {
+        m = Math.max(m, ifDepth(node.elseStatement, depth)); // "else if": not deeper
+      } else {
+        m = Math.max(m, blockDepth(node.elseStatement, depth + 1));
+      }
+    }
+    return m;
+  }
+  function clausesDepth(clauses, depth) {
+    let m = depth;
+    for (const c of clauses) {
+      let cm = depth + 1;
+      for (const s of c.statements) {
+        cm = Math.max(cm, stmtDepth(s, depth + 1));
+      }
+      m = Math.max(m, cm);
+    }
+    return m;
+  }
+  return blockDepth(body, 0);
+}
+
+function paramCountOf(node) {
+  return node.parameters ? node.parameters.length : 0;
+}
+
 function nameOf(node, sourceFile) {
   if (node.name) return node.name.getText(sourceFile);
   const p = node.parent;
@@ -136,6 +211,7 @@ for (const file of files) {
     true,
     scriptKindByExt[path.extname(file)]
   );
+  const fileLines = text.length === 0 ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
 
   (function visit(node) {
     if (
@@ -153,6 +229,9 @@ for (const file of files) {
           start_line: start,
           end_line: end,
           complexity: complexityOf(node.body),
+          param_count: paramCountOf(node),
+          max_nesting_depth: nestingDepthOf(node.body),
+          file_lines: fileLines,
         });
       }
     }

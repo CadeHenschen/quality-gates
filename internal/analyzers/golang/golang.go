@@ -86,6 +86,7 @@ func analyzeFile(path, modRoot, modPath string, blocks []coverBlock, haveCoverag
 	importPath := modPath + "/" + filepath.ToSlash(rel)
 
 	unmeasured := haveCoverage && !fileInProfile(blocks, importPath)
+	fileLines := fset.File(file.Pos()).LineCount()
 
 	var out []crap.Function
 	for _, decl := range file.Decls {
@@ -99,15 +100,18 @@ func analyzeFile(path, modRoot, modPath string, blocks []coverBlock, haveCoverag
 		total, covered, uncovered := coverageForRange(blocks, importPath, start, end)
 
 		out = append(out, crap.Function{
-			File:           rel,
-			Name:           funcName(fn),
-			StartLine:      start,
-			EndLine:        end,
-			Complexity:     cyclomaticComplexity(fn),
-			LinesTotal:     total,
-			LinesCovered:   covered,
-			UncoveredLines: uncovered,
-			Unmeasured:     unmeasured,
+			File:            rel,
+			Name:            funcName(fn),
+			StartLine:       start,
+			EndLine:         end,
+			Complexity:      cyclomaticComplexity(fn),
+			LinesTotal:      total,
+			LinesCovered:    covered,
+			UncoveredLines:  uncovered,
+			Unmeasured:      unmeasured,
+			ParamCount:      paramCount(fn),
+			MaxNestingDepth: maxNestingDepth(fn),
+			FileLines:       fileLines,
 		})
 	}
 	return out, nil

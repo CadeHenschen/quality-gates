@@ -13,7 +13,7 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 
 | Binary | Question | Method | Default gate |
 |---|---|---|---|
-| `crap-metric` | Is this function complex *and* undertested? | Parses each language for cyclomatic complexity + coverage, combines via `complexity² × (1−coverage)³ + complexity` | `--fail-above 30` |
+| `crap-metric` | Is this function complex *and* undertested?<br>Is it also too big to read? | Parses each language for cyclomatic complexity + coverage, combines via `complexity² × (1−coverage)³ + complexity`; the same parse also gates on size/shape (length, params, nesting, file length) | `--fail-above 30`; `--max-lines 80 --max-params 6 --max-nesting 5 --max-file-lines 600` |
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
@@ -86,7 +86,7 @@ needs from the caller (git installed before checkout, `fetch-depth: 0`).
 ## Usage
 
 ```
-crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
+crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
 crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
@@ -166,6 +166,41 @@ internal/gen/**   # codegen, not hand-edited
 Patterns are relative to `--dir`. `--exclude-file PATH` points elsewhere
 (and must exist, unlike the default), and `--exclude` flags add to
 whatever the file lists. The file used is printed at the top of the run.
+
+### crap-metric: size/shape gate
+
+CRAP's cyclomatic complexity misses a real readability problem: a flat
+40-case switch scores *high* on cyclomatic complexity but reads fine,
+while a 6-deep nested `if` scores *low* but is unreadable. Rather than a
+fifth tool, the same per-language parse that already walks each function
+for complexity also records **function length** (derived from
+start/end line, no extra field), **parameter count**, the function's own
+**deepest control-flow nesting depth**, and its **file's physical line
+count** — all as extra fields on the same `crap.Function` every
+language analyzer already produces, gated independently of the CRAP
+score itself via `--max-lines`/`--max-params`/`--max-nesting`/
+`--max-file-lines` (each `<= 0` disables that one check). A function can
+fail on size alone with a low CRAP score, or vice versa — the two gates
+share the same report but are otherwise orthogonal (see `WriteTable`'s
+separate `PASS`/`FAIL` line for each).
+
+Defaults are deliberately generous — egregious cases only, not a style
+gate — and were picked by running the gate against this repo's own real
+source rather than guessed: 80 lines and 6 params come from the sizes
+named in this repo's own design notes; 5 nesting levels and 600 file
+lines were chosen from this repo's own observed maximums at the time
+(nesting 4, 484 file lines) plus headroom, the same way dupe-metric's
+18% self-check threshold and vulture's `--min-confidence 80` were
+derived from a real run rather than picked in the abstract (see
+CLAUDE.md). Nesting depth deliberately does **not** penalize a chained
+`else if`/`elif` — like a many-case switch, it reads flat, so it's
+walked as one level, not one-per-link; see each analyzer's `size.go` for
+the language-specific details (Go's is the reference implementation;
+Python/TypeScript/Swift mirror its algorithm) and CLAUDE.md's Swift entry
+for that language's specific approximations (switch has no per-case
+braces, so its whole body is one level rather than one per case; a
+nested local func's own nesting is opaque to its enclosing function, the
+same under-counting-is-safe choice the Go analyzer makes for closures).
 
 ### crap-metric: trend diffing
 

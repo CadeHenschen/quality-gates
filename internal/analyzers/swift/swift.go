@@ -100,24 +100,46 @@ func analyzeFile(path, dir string, cov lcovData, haveCoverage bool) ([]crap.Func
 
 	toks := swiftlex.Tokenize(src)
 	fns := extractFunctions(toks)
+	fileLines := countLines(src)
 
 	covLines := lookupCoverage(cov, rel)
 	out := make([]crap.Function, 0, len(fns))
 	for _, fn := range fns {
 		total, covered, uncovered := coverageForRange(covLines, fn.startLine, fn.endLine)
 		out = append(out, crap.Function{
-			File:           rel,
-			Name:           fn.name,
-			StartLine:      fn.startLine,
-			EndLine:        fn.endLine,
-			Complexity:     fn.complexity,
-			LinesTotal:     total,
-			LinesCovered:   covered,
-			UncoveredLines: crap.MergeLineRanges(uncovered),
-			Unmeasured:     haveCoverage && covLines == nil,
+			File:            rel,
+			Name:            fn.name,
+			StartLine:       fn.startLine,
+			EndLine:         fn.endLine,
+			Complexity:      fn.complexity,
+			LinesTotal:      total,
+			LinesCovered:    covered,
+			UncoveredLines:  crap.MergeLineRanges(uncovered),
+			Unmeasured:      haveCoverage && covLines == nil,
+			ParamCount:      fn.paramCount,
+			MaxNestingDepth: fn.maxNestingDepth,
+			FileLines:       fileLines,
 		})
 	}
 	return out, nil
+}
+
+// countLines returns src's physical line count, counting a final line
+// even without a trailing newline.
+func countLines(src []byte) int {
+	if len(src) == 0 {
+		return 0
+	}
+	n := 0
+	for _, b := range src {
+		if b == '\n' {
+			n++
+		}
+	}
+	if src[len(src)-1] != '\n' {
+		n++
+	}
+	return n
 }
 
 func coverageForRange(covLines map[int]bool, start, end int) (total, covered int, uncovered []int) {

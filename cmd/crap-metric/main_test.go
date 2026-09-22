@@ -135,6 +135,55 @@ func TestRunAgainstGoTestdataPassAndFail(t *testing.T) {
 	}
 }
 
+func TestRunSizeGateFailsAndDefaultsPassSmallFixture(t *testing.T) {
+	// Default thresholds (--max-params 6 etc.) are generous enough that
+	// the tiny golang-size fixture (5 params) passes untouched.
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/crap/golang-size",
+		"--fail-above", "1000", "--json", filepath.Join(t.TempDir(), "r.json"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 with default thresholds (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "PASS: within size thresholds") {
+		t.Errorf("expected a size PASS line, got:\n%s", stdout.String())
+	}
+
+	// A tighter --max-params than the fixture's 5 parameters fails the
+	// gate even though --fail-above is set high enough to pass on CRAP
+	// alone — proves the two gates are independent.
+	stdout.Reset()
+	stderr.Reset()
+	code = run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/crap/golang-size",
+		"--fail-above", "1000", "--max-params", "3",
+		"--json", filepath.Join(t.TempDir(), "r2.json"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (--max-params 3 should fail on a 5-param function, stderr: %s)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "PASS: no function exceeds CRAP 1000.0") {
+		t.Errorf("expected the CRAP gate to still pass on its own, got:\n%s", out)
+	}
+	if !strings.Contains(out, "FAIL: 1 size threshold violation(s)") || !strings.Contains(out, "5 params (> 3)") {
+		t.Errorf("expected a size FAIL naming the params violation, got:\n%s", out)
+	}
+
+	// A negative threshold disables that check entirely.
+	stdout.Reset()
+	stderr.Reset()
+	code = run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/crap/golang-size",
+		"--fail-above", "1000", "--max-params", "-1",
+		"--json", filepath.Join(t.TempDir(), "r3.json"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (--max-params -1 should disable the check, stderr: %s)", code, stderr.String())
+	}
+}
+
 func TestRunOnlyFilesRatchet(t *testing.T) {
 	dir := t.TempDir()
 

@@ -47,6 +47,11 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		return nil, fmt.Errorf("parse radon output: %w", err)
 	}
 
+	sizes, err := sizeFacts(opts.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("size facts: %w", err)
+	}
+
 	var cov coverageReport
 	if opts.CoveragePath != "" {
 		data, err := os.ReadFile(opts.CoveragePath)
@@ -83,16 +88,20 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 				}
 			}
 
+			size := sizes[sizeKey{file, e.Lineno}]
 			out = append(out, crap.Function{
-				File:           file,
-				Name:           e.Name,
-				StartLine:      e.Lineno,
-				EndLine:        e.Endline,
-				Complexity:     e.Complexity,
-				LinesTotal:     total,
-				LinesCovered:   covered,
-				UncoveredLines: crap.MergeLineRanges(uncoveredLines),
-				Unmeasured:     unmeasured,
+				File:            file,
+				Name:            e.Name,
+				StartLine:       e.Lineno,
+				EndLine:         e.Endline,
+				Complexity:      e.Complexity,
+				LinesTotal:      total,
+				LinesCovered:    covered,
+				UncoveredLines:  crap.MergeLineRanges(uncoveredLines),
+				Unmeasured:      unmeasured,
+				ParamCount:      size.ParamCount,
+				MaxNestingDepth: size.MaxNestingDepth,
+				FileLines:       size.FileLines,
 			})
 		}
 	}

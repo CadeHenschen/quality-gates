@@ -27,6 +27,32 @@ type Function struct {
 	// knows the coverage, and the honest reading is untested, so
 	// Coverage() reports 0 instead of the empty-function 1.
 	Unmeasured bool `json:"unmeasured,omitempty"`
+
+	// ParamCount, MaxNestingDepth, and FileLines are size/shape facts —
+	// orthogonal to CRAP's complexity x (1-coverage) risk score, and
+	// gated separately (see SizeThresholds). A receiver (Go) or self/cls
+	// (Python) doesn't count toward ParamCount.
+	ParamCount int `json:"param_count"`
+	// MaxNestingDepth is the deepest level of control-flow block nesting
+	// (if/for/while/switch/...) found in the function's own body — 0 for
+	// a flat function. A chained else-if reads like a switch's cases, so
+	// it deliberately does NOT add a level on top of its "if" (only a
+	// genuine nested block does); see each analyzer's size.go for the
+	// per-language details of what that means for its grammar.
+	MaxNestingDepth int `json:"max_nesting_depth"`
+	// FileLines is the physical line count of the file this function
+	// lives in (same value for every function in that file). Stamped
+	// here, rather than tracked as a separate per-file report, to keep
+	// size metrics as "extra fields on crap.Function" per CLAUDE.md,
+	// mirroring escape-metric's LinesByFile in spirit but not shape.
+	FileLines int `json:"file_lines"`
+}
+
+// LineCount is the function's own physical length: EndLine - StartLine +
+// 1. Deliberately not a stored field — it's fully derived from StartLine/
+// EndLine, which every analyzer already sets.
+func (f Function) LineCount() int {
+	return f.EndLine - f.StartLine + 1
 }
 
 // LineRange is an inclusive [Start, End] line span.
@@ -95,7 +121,47 @@ type Scored struct {
 type Report struct {
 	Functions []Scored `json:"functions"`
 	FailAbove float64  `json:"fail_above"`
-	Passed    bool     `json:"passed"`
+
+	// SizeThresholds and SizeFindings are set by WithSize; both stay zero
+	// on a Report nobody ever applied a size gate to, so JSON output and
+	// WriteTable can tell "no size gate configured" apart from "size gate
+	// configured, nothing crossed it".
+	SizeThresholds SizeThresholds `json:"size_thresholds,omitempty"`
+	SizeFindings   []SizeFinding  `json:"size_findings,omitempty"`
+
+	Passed bool `json:"passed"`
+}
+
+// crapFailed reports whether any function exceeds the CRAP gate on its
+// own, independent of any size gate WithSize may have layered on top —
+// used so WriteTable's CRAP-specific pass/fail line stays accurate (and
+// its wording unchanged) regardless of what else made the report fail.
+func (r Report) crapFailed() bool {
+	for _, s := range r.Functions {
+		if s.Crap > r.FailAbove {
+			return true
+		}
+	}
+	return false
+}
+
+// WithSize applies a SizeThresholds gate on top of an already-built
+// Report, appending any crossed thresholds as SizeFindings and failing
+// the report if there are any. Kept apart from NewReport — mirroring
+// internal/mutation's WithMinMutants — so the CRAP score math stays a
+// single pass and a ratcheted (--only-files) report can apply its own
+// scoped size gate the same way.
+func (r Report) WithSize(th SizeThresholds) Report {
+	fns := make([]Function, len(r.Functions))
+	for i, s := range r.Functions {
+		fns[i] = s.Function
+	}
+	r.SizeThresholds = th
+	r.SizeFindings = sizeFindings(fns, th)
+	if len(r.SizeFindings) > 0 {
+		r.Passed = false
+	}
+	return r
 }
 
 // NewReport scores every function, sorts worst-first by CRAP, and applies

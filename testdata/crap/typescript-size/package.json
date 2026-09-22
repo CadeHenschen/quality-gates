@@ -1,0 +1,8 @@
+{
+  "name": "crap-metric-testdata-typescript-size",
+  "private": true,
+  "description": "Fixture package used by internal/analyzers/typescript's size-fact tests (ParamCount/MaxNestingDepth/FileLines), separate from testdata/crap/typescript so those tests' exact function counts stay unaffected.",
+  "dependencies": {
+    "typescript": "^5.9.3"
+  }
+}

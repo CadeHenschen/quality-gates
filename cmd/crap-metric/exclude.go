@@ -35,6 +35,25 @@ func dropExcluded(fns []crap.Function, set exclude.Set) ([]crap.Function, int) {
 	return out, len(fns) - len(out)
 }
 
+// applyExcludes loads --exclude-file/--exclude patterns, compiles them, and
+// drops matching functions from fns — the full sequence runCheck needs,
+// factored out so runCheck itself stays under its own --max-lines default.
+func applyExcludes(dir, excludeFile string, excludes stringList, fns []crap.Function, stdout io.Writer) ([]crap.Function, error) {
+	patterns, err := loadExcludePatterns(dir, excludeFile, excludes, stdout)
+	if err != nil {
+		return nil, fmt.Errorf("reading exclude file: %w", err)
+	}
+	excluded, err := exclude.Compile(patterns)
+	if err != nil {
+		return nil, fmt.Errorf("bad --exclude pattern: %w", err)
+	}
+	fns, nExcluded := dropExcluded(fns, excluded)
+	if nExcluded > 0 {
+		fmt.Fprintf(stdout, "excluded: %d function(s) by --exclude\n\n", nExcluded)
+	}
+	return fns, nil
+}
+
 // loadExcludePatterns merges the exclude file's globs with --exclude flags.
 // An explicit --exclude-file must exist; the default file in dir is optional
 // and silently skipped when absent. The file used is announced so CI logs

@@ -23,11 +23,14 @@ var complexityScript []byte
 type Analyzer struct{}
 
 type jsFunction struct {
-	File       string `json:"file"`
-	Name       string `json:"name"`
-	StartLine  int    `json:"start_line"`
-	EndLine    int    `json:"end_line"`
-	Complexity int    `json:"complexity"`
+	File            string `json:"file"`
+	Name            string `json:"name"`
+	StartLine       int    `json:"start_line"`
+	EndLine         int    `json:"end_line"`
+	Complexity      int    `json:"complexity"`
+	ParamCount      int    `json:"param_count"`
+	MaxNestingDepth int    `json:"max_nesting_depth"`
+	FileLines       int    `json:"file_lines"`
 }
 
 // istanbulFile mirrors the subset of a coverage-final.json per-file entry
@@ -88,15 +91,18 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		}
 
 		out2 = append(out2, crap.Function{
-			File:           rel,
-			Name:           f.Name,
-			StartLine:      f.StartLine,
-			EndLine:        f.EndLine,
-			Complexity:     f.Complexity,
-			LinesTotal:     total,
-			LinesCovered:   covered,
-			UncoveredLines: crap.MergeLineRanges(uncoveredLines),
-			Unmeasured:     opts.CoveragePath != "" && !inReport,
+			File:            rel,
+			Name:            f.Name,
+			StartLine:       f.StartLine,
+			EndLine:         f.EndLine,
+			Complexity:      f.Complexity,
+			LinesTotal:      total,
+			LinesCovered:    covered,
+			UncoveredLines:  crap.MergeLineRanges(uncoveredLines),
+			Unmeasured:      opts.CoveragePath != "" && !inReport,
+			ParamCount:      f.ParamCount,
+			MaxNestingDepth: f.MaxNestingDepth,
+			FileLines:       f.FileLines,
 		})
 	}
 	return out2, nil
