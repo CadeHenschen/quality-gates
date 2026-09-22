@@ -1,10 +1,12 @@
 # quality-gates
 
-Six CI quality gate CLIs (Go), one module, for repos on
+Seven CI quality gate CLIs (Go), one module, for repos on
 `git.roost-r.com/cadeh`: `crap-metric` (complexity × undertested),
 `dupe-metric` (duplication), `escape-metric` (suppressed checks),
-`cycle-metric` (import cycles), `test-metric` (test quality), `dead-metric` (unused code). See [README.md](README.md) for the
-formula/algorithm, CLI usage, and architecture.
+`cycle-metric` (import cycles), `arch-metric` (declared layer rules),
+`test-metric` (test quality), `dead-metric` (unused code). See
+[README.md](README.md) for the formula/algorithm, CLI usage, and
+architecture.
 
 This repo is a 2026-09-05 merge of four previously-standalone repos of
 the same names. They stayed separate as long as they had genuinely
@@ -14,8 +16,10 @@ action) was drifting across four copies instead of living in one place.
 The lessons below are inherited from all four histories — a lesson
 learned once in `escape-metric` didn't need re-learning in
 `cycle-metric` because `cycle-metric` was built after, reading this file
-first. Keep doing that: read this before adding a fifth tool or a new
-language adapter to an existing one.
+first. Keep doing that: read this before adding an eighth tool
+(`arch-metric` was the seventh, added post-merge, entirely inside this
+repo — see its own entry below for what it inherited from `cycle-metric`
+by doing exactly that) or a new language adapter to an existing one.
 
 ## Keep the README current
 
@@ -152,6 +156,156 @@ regex in the abstract. Python's resolver went through a real bug this
 way: the first version only resolved the module part of
 `from X import Y`, missing the case where `Y` itself is the target file
 (`from . import b`, module empty, `b` the imported name).
+
+## arch-metric: reuse cycle-metric's importers, add Go for the opposite reason cycle-metric excludes it
+
+`arch-metric` checks declared layer rules ("domain may not import infra",
+"cmd/* may not import each other") against the real import graph — the
+Dependency Inversion Principle as a gate, and a real dogfood: this repo's
+own `.arch-metric-rules.json` gates `cmd/*` staying independent and
+`internal/*` never depending on any `cmd/*` binary, both self-checked in
+CI (`.forgejo/workflows/ci.yml`'s `self-check` and `self-check-pr` jobs).
+
+**python's and typescript's importers are used completely unchanged.**
+`internal/arch.EdgesFromFileGraph` reads a `cycle.Graph` — the exact
+value `python.Importer`/`typescript.Importer` already return, untouched —
+and derives each edge's package from `filepath.Dir` on either side. No
+importer code for those two languages changed at all; only a
+new consumer was written for their existing output. That's the reuse the
+top-level design note promised, and it worked out exactly as expected:
+zero changes needed in either importer.
+
+**Go needed a new importer precisely because cycle-metric doesn't have
+one — and for the mirror-image reason.** `cycle-metric --lang go` is
+unsupported because the compiler already refuses to build an import
+cycle, so a cycle detector for Go would always report zero. Layering is
+different: the compiler has no opinion on it at all, so a perfectly
+acyclic, perfectly buildable Go program can still violate a declared
+boundary — which makes Go the language where this tool's Go support
+matters *most*, not least. `internal/importers/golang` fills that gap via
+`go/parser`'s import-only mode plus the enclosing module's own `go.mod`
+(module-path resolution factored out to `internal/gomod`, shared with
+crap-metric's Go analyzer, once it became clear both needed the identical
+nearest-go.mod walk — the same "extract on the second real occurrence"
+call as `internal/ratchet`/`internal/reportio` during the four-repo
+merge).
+
+**Go's import unit is the package, not the file — reconciled by fan-out,
+not by inventing a new node shape.** Python/TS produce genuine
+file-to-file edges because that's what their import statements name.
+Go's `import` statement names a whole package with no per-file
+granularity at all. Rather than let a directory string masquerade as a
+`cycle.Graph` node (which is documented as "every edge points at a real
+file" — a Go directory violates that contract, and a future reader
+diffing the three importers' node semantics would have no way to tell
+that was intentional), a resolved Go import fans out to *every other
+scanned file in its target package's directory*: a file importing a
+package structurally depends on every file that makes up that package.
+This keeps `cycle.Graph`'s own contract identical across all three
+importers, so `EdgesFromFileGraph` needed no Go-specific branch at all —
+just like reusing the graph type promised.
+
+**Rule patterns reuse `internal/exclude`'s glob engine unchanged, not a
+new one.** A rule's `from`/`deny` values are matched with the exact same
+`exclude.Compile`/`Set.Matches` that `--exclude` and dead-metric's
+`--ignore` already use. This wasn't just convenience: it exercised an
+already-tested property that turned out to be exactly the boundary
+semantics a layer rule needs for free — a pattern with no wildcard
+(`"internal/domain"`) already matches that directory *and everything
+below it*, because `exclude`'s glob-to-regexp compiler appends
+`(?:/.*)?$` to every compiled pattern (originally so `--exclude
+internal/gen` drops a whole tree, not just files literally at that
+path). Writing a second, arch-specific pattern matcher would have had to
+re-derive that same "directory match implies subtree match" behavior
+from scratch, with its own new edge cases to get wrong.
+
+## arch-metric grew three follow-ups without becoming a framework
+
+`stability`, exceptions, and `diff` were added deliberately staying
+inside "one narrow structural check with a binary answer" (see the top
+of this entry) rather than reaching for a richer rule language — the
+line that separates this tool from something like ArchUnit.
+
+**`arch-metric stability` reuses the same edge graph `check` already
+builds — no new importer, no new graph type.** It computes Robert
+Martin's afferent/efferent coupling and instability (`Ce/(Ca+Ce)`) per
+package and flags any edge from a more stable package into a less stable
+one (the Stable Dependencies Principle: "depend in the direction of
+stability"). The one real subtlety: Martin's metrics are a *package*
+graph property, but `internal/importers/golang` fans a single package
+import out to many file-level edges (see above) — computing Ca/Ce
+straight from raw edges would inflate a package's coupling by its
+target's file count instead of by how many packages it actually depends
+on. `internal/arch/stability.go`'s `packagePairs` collapses to one edge
+per unique `(FromPkg, ToPkg)` pair before computing anything, which is
+also why it's a top-level helper `CheckStability` shares with `Check`
+rather than being folded into `Report` — it's a graph-level operation,
+not a per-rule one. Caught by writing
+`TestStabilitiesDedupesFanOutToOnePackagePair` *before* the
+implementation (this whole feature set was built test-first): the naive
+per-edge version passed every test until that one, which was written
+specifically because the Go fan-out design decision above was already
+known to be a landmine for exactly this kind of downstream counting.
+
+**Exceptions are scoped to one named rule, not a bare from/to pattern
+pair.** `{"rule": "...", "from": "...", "to": "..."}` — the `rule` field
+is required and matched exactly. A bare pattern pair with no rule name
+would silently exempt that package pair from every rule that happens to
+match it, including ones added to the file later; scoping to a rule name
+makes an exception's blast radius exactly as wide as the person who
+wrote it could see at the time. It drops a matching violation from both
+the report and the gate — the same contract as dead-metric's `--ignore`
+and crap-metric's `--exclude`, deliberately different from `--only-files`
+(which only narrows the gate, never the report).
+
+**`arch-metric diff` mirrors crap-metric's `diff` but is simpler, because
+a layer violation has no continuous score.** crap-metric's `Delta` has a
+"changed" case (a function's CRAP score moved between two runs);
+`arch.DiffEntry` only ever has "new" or "fixed", because a violation
+either exists or it doesn't. Matched by `(rule, file, import)` rather
+than crap's `(file, name)` — the extra `rule` key matters here because
+the same file+import pair can appear under two different rules
+simultaneously (e.g. one rule about `cmd/*` independence and another
+about `internal/*` layering, both tripped by the same edge), which
+would collide under a two-part key.
+
+**Building all three surfaced a real, self-inflicted duplication bug
+before it ever reached the self-check gate.** Running `dupe-metric`
+against the finished feature set (a habit worth repeating any time new
+CLI subcommands or report types get added — see "CI self-checks this
+repo" below) found three genuine repeats: `cmd/arch-metric/main.go`'s
+`runCheck` and `runStability` shared a same-file block from copy-pasting
+one to write the other; `filterForRatchet`/`filterStabilityForRatchet`
+in the same file were byte-for-byte identical except for the violation
+type; and `Report.WriteTable`/`StabilityReport.WriteTable` shared their
+entire truncation-and-verdict tail. The first was left alone — same
+judgment call as the dupe-metric self-check threshold entry below: two
+subcommands of one tool sharing a skeleton is exactly the kind of
+structural echo forcing into one function would obscure, not clarify,
+and `test-metric`'s own `check`/`mutation` split already establishes that
+precedent. The other two were real, mechanical, same-file duplication
+with no domain reason to differ, so they got a real fix: a generic
+`filterForRatchet[T any]` (parameterized on two accessor funcs, same
+shape as `reportio.WriteJSON[T any]`), and `internal/arch/table.go`'s
+`truncateRows[T any]`/`writeGateVerdict` shared by both `WriteTable`s and
+`WriteDiffTable`. Bringing this repo's overall duplication from 14.73%
+back down to 14.06% — comfortably under the self-check's 18% ceiling
+either way, but fixed anyway because it was real, not because the gate
+demanded it.
+
+**A fixture placement mistake, caught by its own test, not by review.**
+The `stability` fixture was first written nested inside
+`testdata/arch/golang/` (alongside `check`'s domain/infra/cmd fixture) —
+and `TestRunStabilityNoViolationsOnLayerFixture` immediately failed,
+because `--dir testdata/arch/golang` now recursively picked up the new
+`stability/` subtree too, producing a real (if accidental) violation from
+the combined graph. Moved to a sibling `testdata/arch/golang-stability/`
+directory instead. The lesson generalizes: any fixture directory nested
+under another tool invocation's `--dir` is implicitly part of that
+invocation's input, Go's own `testdata`-name exclusion notwithstanding —
+new fixtures need a directory boundary check against every existing
+`--dir` argument that could recursively contain them, not just a
+uniqueness check against sibling fixture names.
 
 ## Swift support: native lexer shared by two tools, cycle-metric excludes it
 
@@ -392,8 +546,8 @@ to mean the fourth (the actual walk) was updated too.
 ## CI self-checks this repo — keep it passing for real
 
 `.forgejo/workflows/ci.yml`'s self-check jobs run crap-metric/
-dupe-metric/escape-metric against this repo's own Go source and gate the
-build on it (cycle-metric can't — see README). If a change pushes a gate
+dupe-metric/escape-metric/arch-metric against this repo's own Go source
+and gate the build on it (cycle-metric can't — see README). If a change pushes a gate
 into FAIL, the right fix is almost always a real test exercising the
 flagged code — not raising `--fail-above` to make the finding go away.
 `internal/crap/report_test.go` and `cmd/crap-metric/main_test.go` exist

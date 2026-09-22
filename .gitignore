@@ -2,12 +2,14 @@
 /dupe-metric
 /escape-metric
 /cycle-metric
+/arch-metric
 /test-metric
 /dead-metric
 crap-report.json
 dupe-report.json
 escape-report.json
 cycle-report.json
+arch-report.json
 test-report.json
 mutation-report.json
 /dead-report.json

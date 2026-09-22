@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "name": "cmd binaries are independent processes",
+      "from": "cmd/*",
+      "deny": ["cmd/*"]
+    },
+    {
+      "name": "internal packages must not depend on any cmd binary",
+      "from": "internal",
+      "deny": ["cmd"]
+    }
+  ]
+}

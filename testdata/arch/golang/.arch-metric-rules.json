@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "name": "domain must not depend on infra",
+      "from": "domain",
+      "deny": ["infra"]
+    },
+    {
+      "name": "cmd binaries are independent processes",
+      "from": "cmd/*",
+      "deny": ["cmd/*"]
+    }
+  ]
+}

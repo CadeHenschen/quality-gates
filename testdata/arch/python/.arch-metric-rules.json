@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "name": "domain must not depend on infra",
+      "from": "pkg/domain",
+      "deny": ["pkg/infra"]
+    }
+  ]
+}

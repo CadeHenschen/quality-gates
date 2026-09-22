@@ -19,12 +19,13 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
+	"git.roost-r.com/cadeh/quality-gates/internal/gomod"
 )
 
 type Analyzer struct{}
 
 func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
-	modRoot, modPath, err := findModule(opts.Dir)
+	modRoot, modPath, err := gomod.Find(opts.Dir)
 	if err != nil {
 		return nil, err
 	}
@@ -150,33 +151,6 @@ func cyclomaticComplexity(fn *ast.FuncDecl) int {
 		return true
 	})
 	return complexity
-}
-
-// findModule locates the nearest go.mod at or above dir and returns its
-// directory and module path, so source files can be matched against cover
-// profile entries (which are keyed by full import path).
-func findModule(dir string) (root, modulePath string, err error) {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", "", err
-	}
-	for d := abs; ; {
-		modFile := filepath.Join(d, "go.mod")
-		if data, err := os.ReadFile(modFile); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "module ") {
-					return d, strings.TrimSpace(strings.TrimPrefix(line, "module")), nil
-				}
-			}
-			return "", "", fmt.Errorf("%s: no module directive found", modFile)
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return "", "", fmt.Errorf("no go.mod found above %s", abs)
-		}
-		d = parent
-	}
 }
 
 type coverBlock struct {

@@ -1,15 +1,16 @@
 # quality-gates
 
-Six CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
-**escape-metric**, **cycle-metric**, **test-metric**, and **dead-metric**. Each answers a different
-question about a change, with a deliberately different, appropriately-
-scoped detection method — but they share enough (the `--only-files`
-ratchet mechanism, the CI/release plumbing, the install pattern) that
-running them as four separate repos meant four copies of that shared
-logic drifting independently. Migrated into one module for exactly that
-reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
+Seven CI quality gate CLIs, one Go module: **crap-metric**, **dupe-metric**,
+**escape-metric**, **cycle-metric**, **arch-metric**, **test-metric**, and
+**dead-metric**. Each answers a different question about a change, with a
+deliberately different, appropriately-scoped detection method — but they
+share enough (the `--only-files` ratchet mechanism, the CI/release
+plumbing, the install pattern) that running them as four separate repos
+meant four copies of that shared logic drifting independently. Migrated
+into one module for exactly that reason — see [CLAUDE.md](CLAUDE.md) for
+the incidents that motivated it.
 
-## The six gates
+## The seven gates
 
 | Binary | Question | Method | Default gate |
 |---|---|---|---|
@@ -17,22 +18,30 @@ reason — see [CLAUDE.md](CLAUDE.md) for the incidents that motivated it.
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
 | `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
+| `arch-metric` | Does this code violate a declared layer boundary? | `check`: resolves imports to packages, checks each edge against a small "X may not import Y" rules file. `stability`: gates on Martin's Stable Dependencies Principle from the same graph | `check --fail-above 0` (violations); `stability --fail-above 0` (violations) |
 | `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) / `periphery` (Swift) reports and gates on the count | `--fail-above 0` (dead symbols) |
 | `test-metric` | Can these tests actually fail? | `check`: parses test files for tests with no assertions, skips, `.only`, mock-only assertions, leaked temp dirs. `mutation`: gates on a mutation tool's score | `check --fail-above 0` (findings); `mutation --fail-below 60` (%) |
 
 The first four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
 `dupe-metric`, and `escape-metric` also support `go` and `swift`.
-`test-metric check` supports all four (`go`, `python`, `ts`/`js`, `swift`).
-`cycle-metric` deliberately excludes both: Go's compiler already refuses
-to build a package-import cycle, so a detector for it would always
-report zero; Swift files within one module never import each other at
-all (no per-file import graph exists the way Python/TS have one), and
-cycles between separate modules would need `Package.swift`-level
+`arch-metric` supports `python`, `ts`/`js`, and **`go`** — the one place a
+Go importer exists in this module at all, for the opposite reason
+`cycle-metric` excludes Go: the compiler already refuses to build an
+import cycle, but it has no opinion whatsoever on layering, so `arch-metric`
+is exactly where a Go import graph earns its keep. `test-metric check`
+supports all four (`go`, `python`, `ts`/`js`, `swift`).
+
+`cycle-metric` deliberately excludes both Go and Swift: Go's compiler
+already refuses to build a package-import cycle, so a detector for it
+would always report zero; Swift files within one module never import each
+other at all (no per-file import graph exists the way Python/TS have
+one), and cycles between separate modules would need `Package.swift`-level
 resolution this tool doesn't implement — see `--lang swift`'s own error
-message and CLAUDE.md's Swift entry for the full reasoning. See each
+message and CLAUDE.md's Swift entry for the full reasoning. `arch-metric`
+excludes only Swift, for the same per-file-import-graph reason. See each
 package's doc comment (`internal/crap`, `internal/dupe`, `internal/escape`,
-`internal/cycle`) for the full reasoning and known characteristics of its
-method.
+`internal/cycle`, `internal/arch`) for the full reasoning and known
+characteristics of its method.
 
 ## Ratcheting: `--only-files`
 
@@ -58,7 +67,10 @@ directly, a `dupe.Clone` counts as touched if *either* side matches, an
 `escape.Hatch`'s scoped rate needs its own touched-files-only line-count
 denominator (using the whole-repo total would dilute a small change's
 hatches into a rate too tiny to ever trip `--fail-above`), a
-`cycle.Cycle` counts as touched if *any* file in it matches, `test-metric
+`cycle.Cycle` counts as touched if *any* file in it matches, an
+`arch.Violation` (and, identically, an `arch.StabilityViolation`) counts
+as touched if *either* the importing or the imported file matches (same
+reasoning as `dupe.Clone`), `test-metric
 check` re-analyzes just the touched files' tests, and `test-metric
 mutation` re-scores just the touched files' mutants (numerator and
 denominator both come from the mutant list, so there's no separate
@@ -91,6 +103,9 @@ crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--only-files PATH] [--json PATH]
+arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+arch-metric   diff  --old PATH --new PATH [--top N] [--json]
 test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--only-files PATH] [--json PATH]
 test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--min-mutants N] [--only-files PATH] [--json PATH]
 <any tool>    version
@@ -234,6 +249,130 @@ cycle is a structural property of the whole import graph, and excluding
 tests could hide a real tangle. Every cycle's report includes both the
 full set of files involved and a reconstructed concrete `Chain` — a
 literal path back to its own start, not just an unordered set.
+
+### arch-metric: declared layer rules
+
+Go's compiler stops import cycles; it says nothing about *layering* — a
+leaf package reaching back into one that's supposed to depend on it is
+perfectly buildable, just architecturally backwards. arch-metric enforces
+the Dependency Inversion Principle directly: a small, checked-in rules
+file declares boundaries, and every resolved import is checked against
+them structurally. A failure is binary (the import either exists or it
+doesn't), never a judgment call.
+
+It reuses cycle-metric's own machinery rather than reinventing it:
+python's and typescript's importers are used completely unchanged (their
+file-level import graph is simply read as `(file, package)` pairs, since
+a package is just a file's own directory), and `--only-files` ratchets
+the same way every other tool's does. The one new piece is
+`internal/importers/golang` — a Go importer arch-metric needed and
+cycle-metric deliberately never built, for the opposite reason:
+`cycle-metric --lang go` would always report zero (see above), but a
+completely acyclic Go program can absolutely violate a layer boundary,
+so this is exactly where a Go import graph earns its keep. It resolves
+each file's imports via `go/parser`'s import-only mode plus the enclosing
+module's own `go.mod`, fans a package import out to every other scanned
+file in that package's directory (Go's import unit is the package, not
+the file, unlike Python/TS), and — like cycle-metric — includes test
+files, since a layer boundary is a structural property of the whole
+graph.
+
+**Rules file** (`--rules PATH`, default `<dir>/.arch-metric-rules.json`):
+
+```json
+{
+  "rules": [
+    {
+      "name": "domain must not depend on infra",
+      "from": "internal/domain",
+      "deny": ["internal/infra"]
+    },
+    {
+      "name": "cmd binaries are independent processes",
+      "from": "cmd/*",
+      "deny": ["cmd/*"]
+    }
+  ]
+}
+```
+
+Each rule's `from` and `deny` patterns reuse `internal/exclude`'s glob
+syntax unchanged (the same one `--exclude` and dead-metric's `--ignore`
+already use), matched against a `--dir`-relative package (directory)
+path: a pattern with no wildcard matches that directory *and everything
+under it* (`"internal/domain"` covers `internal/domain/model` too), `*`
+stays within one path segment (`"cmd/*"` matches each `cmd/X` — and
+everything under it — but never `cmd` itself), `**` spans segments. An
+import within a single package is never a layering question and is
+always skipped, which is what keeps the second example above from ever
+matching a `cmd/X` package against itself.
+
+Only `python`, `ts`/`js`, and `go` are supported — `arch-metric --lang
+swift` errors the same way `cycle-metric --lang swift` does: Swift files
+within one module never import each other, so there's no per-file import
+graph to check boundaries against in the first place.
+
+**Exceptions** grandfather one specific, already-known violation without
+disabling the rule for everyone else — the same "drop it from both the
+report and the gate" contract as dead-metric's `--ignore` and crap-metric's
+`--exclude`, unlike `--only-files`, which only narrows the gate:
+
+```json
+{
+  "rules": [ ... ],
+  "exceptions": [
+    {
+      "rule": "domain must not depend on infra",
+      "from": "internal/domain/legacy",
+      "to": "internal/infra",
+      "reason": "migrating off in Q1, JIRA-1234"
+    }
+  ]
+}
+```
+
+An exception is scoped to one named `rule` on purpose: a bare `from`/`to`
+glob pair with no rule name would silently exempt that package pair from
+every rule that happens to match it, including ones added later — an easy
+way to build an unintentional loophole. `reason` is optional but
+conventional, the same way `.crap-metric-exclude`'s trailing `#` comments
+carry a reason for review.
+
+#### `arch-metric stability`: Martin's Stable Dependencies Principle
+
+```
+arch-metric stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+```
+
+A second, independent gate computed from the same import graph `check`
+already builds — no rules file needed. For every package, it computes
+Robert Martin's afferent coupling (Ca: how many other packages depend on
+it), efferent coupling (Ce: how many packages it depends on), and
+instability `I = Ce / (Ca + Ce)` (0 = maximally stable, depended on by
+many, depending on nothing; 1 = maximally unstable). A violation is any
+import from a more stable package into a less stable one — "depend in the
+direction of stability" — since that's exactly the shape of dependency
+that makes the stable package hard to change without also touching
+whatever unstable thing it now leans on. Package pairs, not raw file
+edges: Go's importer fans one package import out to every file in the
+target package (see above), so counting raw edges would inflate a
+package's coupling by its target's file count rather than by how many
+packages it actually depends on — `internal/arch.packagePairs` collapses
+back to one edge per unique package pair before computing anything.
+Ratchets and reports exactly like `check`.
+
+#### `arch-metric diff`: trend comparison
+
+```
+arch-metric diff --old PATH --new PATH [--top N] [--json]
+```
+
+Mirrors crap-metric's own `diff`: compares two `check` JSON reports
+(matched by rule+file+import) and prints every violation that's new or
+fixed since the baseline, new ones first. Unlike crap-metric's `Delta`,
+there's no continuous score to track a "changed" case for — a layer
+violation either exists or it doesn't — so every entry is one or the
+other. Informational only; always exits `0`, the same as crap-metric's.
 
 ### test-metric: are the tests any good?
 
@@ -402,14 +541,16 @@ Ignored findings are dropped from both the report and the gate.
 
 ```
 cmd/
-  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/    test-metric/    dead-metric/
+  crap-metric/    dupe-metric/    escape-metric/    cycle-metric/    arch-metric/    test-metric/    dead-metric/
 internal/
   ratchet/                        # shared --only-files primitives
+  gomod/                          # nearest-go.mod lookup, shared by crap's Go analyzer and arch's Go importer
   swiftlex/                       # native Swift lexer, shared by analyzers/tokenizers/testscanners below
   crap/           analyzers/{golang,python,typescript,swift}
   dupe/           tokenizers/{golang,python,typescript,swift}
   escape/
   cycle/          importers/{python,typescript}          # no Go, no Swift — see README above
+  arch/           importers/{python,typescript,golang}   # reuses the two above unchanged, adds Go — no Swift
   testmetric/     testscanners/{golang,python,typescript,swift}  # static test-quality checks
   mutation/                                                # mutation-report parsing + score gate
   deadcode/                                                # deadcode/knip/vulture/periphery report parsing, ignore list, count gate
@@ -418,16 +559,22 @@ testdata/
   dupe/{golang,python,typescript,typescript-ts7,javascript,swift}/
   escape/{golang,python,typescript,swift}/    # .js/.jsx fixtures live alongside typescript's — same "ts" language block
   cycle/{python,typescript,javascript}/
+  arch/{golang,python,typescript}/  arch/golang-stability/   # separate dir: stability's own package graph, kept isolated from check's
   test/{golang,python,typescript,swift}/  test/mutation/          # deliberately-bad tests; sample mutation reports
   dead/{deadcode.json,knip.json,vulture.txt,periphery.json}  dead/{golang,python}/                    # real tool output, captured (not hand-written)
 ```
 
-Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`) and
+Each tool's domain package (`crap`, `dupe`, `escape`, `cycle`, `arch`) and
 language-adapter tree (`analyzers`, `tokenizers`, `importers`) stay
 separate — their data models are genuinely different, so unifying them
 would be forced, not real deduplication. Only `internal/ratchet` (truly
-byte-for-byte identical across all four before this migration) and the
-CI/release pipeline were actually shared.
+byte-for-byte identical across all four before this migration),
+`internal/gomod`, and the CI/release pipeline were actually shared.
+`internal/importers/golang` lives under the same shared `importers` tree
+as python/typescript (it implements the identical `importers.Importer`
+interface, returning the same `cycle.Graph` shape) even though only
+arch-metric wires it up — cycle-metric's own `main.go` still explicitly
+rejects `--lang go`, same as before.
 
 `testdata` is namespaced per tool (`testdata/crap/...`,
 `testdata/dupe/...`, etc.) since each tool's fixtures have different,
@@ -437,24 +584,30 @@ tool has its own `golang/sample.go`).
 ## Status
 
 CI (`.forgejo/workflows/ci.yml`) builds/vets/tests the whole module on
-every push and PR; on `main`, it also builds all six `linux/amd64` and
+every push and PR; on `main`, it also builds all seven `linux/amd64` and
 `darwin/arm64` binaries (the latter for the mac-mini runner), each with
 `-ldflags "-X main.version=<short-sha>"` baked in, and publishes them to
 **one** Forgejo release tagged with that same short commit SHA — pure
 distribution, no report data attached, so the release job also prunes
 releases down to the newest 20 after each push. It then self-checks
-crap-metric/dupe-metric/escape-metric/test-metric/dead-metric against the repo's own (now much
-larger, all-six-tools) Go source — cycle-metric still can't self-check,
-being Go-only in implementation but not supporting Go analysis.
-crap-metric's self-check trend-diffs against the previous run's report,
-read from (and then advanced on) a dedicated `reports` branch — one
-commit per run, `crap-report.json` only — rather than a release asset.
+crap-metric/dupe-metric/escape-metric/arch-metric/test-metric/dead-metric
+against the repo's own (now much larger, all-seven-tools) Go source —
+cycle-metric still can't self-check, being Go-only in implementation but
+not supporting Go analysis; arch-metric *can* (it's the one tool besides
+crap/dupe/escape whose Go support isn't a no-op), gated by this repo's own
+`.arch-metric-rules.json` at the module root — both its `check` and
+`stability` gates run self-checked, the latter needing no rules file at
+all. crap-metric's self-check
+trend-diffs against the previous run's report, read from (and then
+advanced on) a dedicated `reports` branch — one commit per run,
+`crap-report.json` only — rather than a release asset.
 
 Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
 `install-quality-gates` action (which replaced four separate
-`install-*-metric` actions; it still needs a one-line addition to fetch
-`test-metric` and `dead-metric`, which the release job already publishes); that action's optional `version` input pins
-to a specific release tag instead of always floating on `latest`.
+`install-*-metric` actions; it still needs updating to fetch `arch-metric`,
+`test-metric`, and `dead-metric`, which the release job already
+publishes); that action's optional `version` input pins to a specific
+release tag instead of always floating on `latest`.
 
 ## Development
 

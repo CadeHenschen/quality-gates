@@ -144,12 +144,14 @@ jobs:
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dupe-metric-linux-amd64     ./cmd/dupe-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o escape-metric-linux-amd64   ./cmd/escape-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o cycle-metric-linux-amd64    ./cmd/cycle-metric
+          GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o arch-metric-linux-amd64     ./cmd/arch-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o test-metric-linux-amd64     ./cmd/test-metric
           GOOS=linux  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dead-metric-linux-amd64     ./cmd/dead-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o crap-metric-darwin-arm64    ./cmd/crap-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dupe-metric-darwin-arm64    ./cmd/dupe-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o escape-metric-darwin-arm64  ./cmd/escape-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o cycle-metric-darwin-arm64   ./cmd/cycle-metric
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o arch-metric-darwin-arm64    ./cmd/arch-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o test-metric-darwin-arm64    ./cmd/test-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dead-metric-darwin-arm64    ./cmd/dead-metric
 
@@ -187,7 +189,7 @@ jobs:
             fi
           fi
 
-          for BIN in crap-metric dupe-metric escape-metric cycle-metric test-metric dead-metric; do
+          for BIN in crap-metric dupe-metric escape-metric cycle-metric arch-metric test-metric dead-metric; do
             for PLATFORM in linux-amd64 darwin-arm64; do
               curl -sS -X POST -H "Authorization: token $TOKEN" \
                 -F "attachment=@${BIN}-${PLATFORM}" \
@@ -271,7 +273,7 @@ jobs:
       # CLAUDE.md's "Releases are for distribution only" entry). No
       # -ldflags version needed here; this build never leaves the job.
       - name: Build binaries
-        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric ./cmd/test-metric ./cmd/dead-metric
+        run: go build -o . ./cmd/crap-metric ./cmd/dupe-metric ./cmd/escape-metric ./cmd/arch-metric ./cmd/test-metric ./cmd/dead-metric
 
       # Same "SKIP means a dependency is missing" assertion as the "test"
       # and post-merge "self-check" jobs.
@@ -300,6 +302,22 @@ jobs:
 
       - name: escape-metric check (self)
         run: ./escape-metric check --lang go --dir . --fail-above 1
+
+      # Gated by this repo's own .arch-metric-rules.json at the module
+      # root (cmd binaries stay independent; internal packages never
+      # depend on a cmd binary). The one tool here besides
+      # crap/dupe/escape whose Go support is a real analysis, not a
+      # "--lang go isn't supported" error — see README's arch-metric
+      # section for why Go needs this tool specifically.
+      - name: arch-metric check (self)
+        run: ./arch-metric check --lang go --dir . --fail-above 0
+
+      # No rules file needed — stability is computed structurally from
+      # the same import graph `check` builds, gated on Robert Martin's
+      # Stable Dependencies Principle (a stable package must never depend
+      # on a less stable one). See README's arch-metric section.
+      - name: arch-metric stability (self)
+        run: ./arch-metric stability --lang go --dir . --fail-above 0
 
       # Static test-quality gate over this repo's own Go tests: no test
       # without an assertion, no unconditional skip. Mutation testing is
@@ -409,6 +427,16 @@ jobs:
         run: escape-metric check --lang go --dir . --fail-above 1
 
       # `go run`, not the installed binary: ci-workflows'
+      # install-quality-gates doesn't fetch arch-metric yet either, and
+      # this gate shouldn't depend on a change in another repo. Same
+      # .arch-metric-rules.json and reasoning as the PR job above.
+      - name: arch-metric check (self)
+        run: go run ./cmd/arch-metric check --lang go --dir . --fail-above 0
+
+      - name: arch-metric stability (self)
+        run: go run ./cmd/arch-metric stability --lang go --dir . --fail-above 0
+
+      # `go run`, not the installed binary: ci-workflows'
       # install-quality-gates only fetches the four older binaries until
       # that action learns about test-metric, and this gate shouldn't
       # depend on a change in another repo.
@@ -454,6 +482,7 @@ jobs:
             crap-report.json
             dupe-report.json
             escape-report.json
+            arch-report.json
 
       - name: Advance reports branch with this run's report
         if: always()
