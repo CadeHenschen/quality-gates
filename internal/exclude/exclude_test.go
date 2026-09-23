@@ -66,3 +66,20 @@ func TestReadFile(t *testing.T) {
 		t.Error("expected error for a missing file")
 	}
 }
+
+func FuzzCompileAndMatch(f *testing.F) {
+	for _, seed := range [][2]string{
+		{"internal/gen/**", "internal/gen/a.go"},
+		{"**/*_pb.go", "deep/file_pb.go"},
+		{"[", "file.go"},
+		{"", "file.go"},
+	} {
+		f.Add(seed[0], seed[1])
+	}
+	f.Fuzz(func(t *testing.T, pattern, file string) {
+		set, err := Compile([]string{pattern})
+		if err == nil {
+			_ = set.Matches(file)
+		}
+	})
+}

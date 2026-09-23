@@ -14,8 +14,8 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
 )
 
-const usage = `usage:
-  escape-metric check --lang python|go|ts --dir DIR [--fail-above RATE] [--top N] [--only-files PATH] [--json PATH]
+var usage = `usage:
+  escape-metric check --lang ` + escape.CanonicalLanguages + ` --dir DIR [--fail-above RATE] [--top N] [--only-files PATH] [--json PATH]
   escape-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -44,7 +44,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	lang := fs.String("lang", "", "language to scan: python, go, or ts")
+	lang := fs.String("lang", "", "language to scan: "+escape.CanonicalLanguages)
 	dir := fs.String("dir", ".", "source directory to scan")
 	failAbove := fs.Float64("fail-above", 1, "escape hatches per 1000 lines above which the gate fails")
 	top := fs.Int("top", 20, "number of hatches to print (0 = all)")
@@ -59,7 +59,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if _, ok := escape.Resolve(*lang); !ok {
-		fmt.Fprintf(stderr, "escape-metric: unknown --lang %q (want python, go, or ts)\n", *lang)
+		fmt.Fprintf(stderr, "escape-metric: unknown --lang %q (want %s)\n", *lang, escape.CanonicalLanguages)
 		return 2
 	}
 

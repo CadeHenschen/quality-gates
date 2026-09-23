@@ -19,6 +19,11 @@ package escape
 
 import "regexp"
 
+// CanonicalLanguages is the single display form for the language set this
+// scanner supports. Resolve also accepts aliases below; help text and docs use
+// this canonical list so they cannot drift from the implementation.
+const CanonicalLanguages = "python|go|ts|swift"
+
 // Pattern is one named, regex-matched escape hatch.
 type Pattern struct {
 	Name  string

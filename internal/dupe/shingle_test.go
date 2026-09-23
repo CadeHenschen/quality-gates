@@ -108,3 +108,23 @@ func TestFindSameFilePreventsOverlap(t *testing.T) {
 func rangesOverlapForTest(startA, endA, startB, endB int) bool {
 	return startA <= endB && startB <= endA
 }
+
+func FuzzFind(f *testing.F) {
+	f.Add("abcabc", "abcabc", 2)
+	f.Add("", "", 0)
+	f.Fuzz(func(t *testing.T, a, b string, minTokens int) {
+		toTokens := func(text string) []Token {
+			out := make([]Token, 0, len(text))
+			for i, r := range text {
+				out = append(out, Token{Text: string(r), Line: i + 1})
+			}
+			return out
+		}
+		clones := Find([]FileTokens{{File: "a", Tokens: toTokens(a)}, {File: "b", Tokens: toTokens(b)}}, minTokens)
+		for _, clone := range clones {
+			if clone.Tokens < 1 || clone.StartLineA > clone.EndLineA || clone.StartLineB > clone.EndLineB {
+				t.Errorf("invalid clone from fuzz input: %+v", clone)
+			}
+		}
+	})
+}

@@ -54,11 +54,11 @@ jobs:
       # for months (see CLAUDE.md) and that let this repo's own self-check
       # job (below) run its coverage step against a partially-skipped
       # suite without anyone noticing.
-      - name: go build / vet / test
+      - name: go build / vet / race-test / fuzz
         run: |
           go build ./...
           go vet ./...
-          go test ./... -v > test.log 2>&1
+          go test -race ./... -v > test.log 2>&1
           status=$?
           cat test.log
           if [ $status -ne 0 ]; then
@@ -69,6 +69,11 @@ jobs:
             grep '^--- SKIP' test.log >&2
             exit 1
           fi
+          go test -fuzz=FuzzCompileAndMatch -fuzztime=5s ./internal/exclude
+          go test -fuzz=FuzzFind -fuzztime=5s ./internal/dupe
+          go test -fuzz=FuzzParse -fuzztime=5s ./internal/deadcode
+          go test -fuzz=FuzzTokenize -fuzztime=5s ./internal/swiftlex
+          go test -fuzz=FuzzResolveFileImports -fuzztime=5s ./internal/importers/python
 
   # No `needs:` — runs in parallel with `test` (this runner has 4
   # concurrent job slots, not 1). golangci-lint doesn't need the

@@ -101,7 +101,7 @@ needs from the caller (git installed before checkout, `fetch-depth: 0`).
 crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
 crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
-escape-metric check --lang <python|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
+escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
 arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--only-files PATH] [--json PATH]
 arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
@@ -341,7 +341,7 @@ carry a reason for review.
 #### `arch-metric stability`: Martin's Stable Dependencies Principle
 
 ```
-arch-metric stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+arch-metric stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH | --baseline PATH] [--json PATH]
 ```
 
 A second, independent gate computed from the same import graph `check`
@@ -359,7 +359,19 @@ target package (see above), so counting raw edges would inflate a
 package's coupling by its target's file count rather than by how many
 packages it actually depends on — `internal/arch.packagePairs` collapses
 back to one edge per unique package pair before computing anything.
-Ratchets and reports exactly like `check`.
+`--only-files` ratchets a stability verdict by the source files on either
+end of a violating edge. For repositories carrying existing stability debt,
+prefer `--baseline previous-arch-stability-report.json`: it evaluates the
+whole current graph but gates only package-pair violations that are new since
+that baseline. That is safer for a global metric — a dependency change can
+alter another package's instability without editing the file that represents
+its existing edge. `--baseline` and `--only-files` are mutually exclusive.
+
+When an `arch-metric check` rules file (including its exceptions) appears in
+the changed-file list, its ratchet intentionally becomes a full verdict.
+Changing policy changes the meaning of every dependency; scoping that change
+to zero source edges could otherwise silently admit a newly declared
+violation.
 
 #### `arch-metric diff`: trend comparison
 
@@ -603,11 +615,9 @@ advanced on) a dedicated `reports` branch — one commit per run,
 `crap-report.json` only — rather than a release asset.
 
 Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
-`install-quality-gates` action (which replaced four separate
-`install-*-metric` actions; it still needs updating to fetch `arch-metric`,
-`test-metric`, and `dead-metric`, which the release job already
-publishes); that action's optional `version` input pins to a specific
-release tag instead of always floating on `latest`.
+`install-quality-gates` action, which installs all seven release binaries;
+that action's optional `version` input pins to a specific release tag instead
+of always floating on `latest`.
 
 ## Development
 

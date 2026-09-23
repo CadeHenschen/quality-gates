@@ -117,6 +117,22 @@ func TestNewStabilityReportGate(t *testing.T) {
 	}
 }
 
+func TestStabilityRegressionsUsesPackagePairs(t *testing.T) {
+	old := NewStabilityReport(2, []StabilityViolation{
+		{FromPkg: "stable", ToPkg: "unstable", File: "stable/old.go", Import: "unstable/x.go"},
+	}, 0)
+	newReport := NewStabilityReport(2, []StabilityViolation{
+		// A different representative source file is still the same package
+		// relationship, so it is not a new regression.
+		{FromPkg: "stable", ToPkg: "unstable", File: "stable/new.go", Import: "unstable/x.go"},
+		{FromPkg: "api", ToPkg: "infra", File: "api/a.go", Import: "infra/x.go"},
+	}, 0)
+	got := StabilityRegressions(old, newReport)
+	if len(got) != 1 || got[0].FromPkg != "api" || got[0].ToPkg != "infra" {
+		t.Errorf("StabilityRegressions = %+v, want only api -> infra", got)
+	}
+}
+
 func TestStabilityReportWriteTablePass(t *testing.T) {
 	var buf bytes.Buffer
 	NewStabilityReport(3, nil, 0).WriteTable(&buf, 20)

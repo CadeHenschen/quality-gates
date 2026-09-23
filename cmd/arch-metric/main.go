@@ -22,7 +22,7 @@ import (
 
 const usage = `usage:
   arch-metric check     --lang python|ts|go --dir DIR [--rules PATH] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
-  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
+  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N] [--top N] [--only-files PATH | --baseline PATH] [--json PATH]
   arch-metric diff      --old PATH --new PATH [--top N] [--json]
   arch-metric version`
 
@@ -82,7 +82,8 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	ruleSet, err := loadRuleSet(*rulesPath, *dir)
+	resolvedRulesPath := resolveRulesPath(*rulesPath, *dir)
+	ruleSet, err := loadRuleSet(resolvedRulesPath)
 	if err != nil {
 		fmt.Fprintln(stderr, "arch-metric:", err)
 		return 2
@@ -112,6 +113,14 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	if onlyFiles == nil {
 		return report.ExitCode()
 	}
+	// Rules and exceptions change the meaning of every edge, not merely
+	// the edges in a source file named in --only-files. A ratchet must not
+	// let a stricter policy file pass simply because no violating source
+	// file changed in the same commit.
+	if ruleFileChanged(resolvedRulesPath, *dir, onlyFiles) {
+		fmt.Fprintln(stdout, "\nratchet scope: layer policy changed; evaluating every violation")
+		return report.ExitCode()
+	}
 
 	scopedViolations := filterForRatchet(violations, onlyFiles,
 		func(v arch.Violation) string { return v.File },
@@ -135,8 +144,13 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Int("fail-above", 0, "number of stable-dependency violations above which the gate fails")
 	top := fs.Int("top", 20, "number of violations to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to violations touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	baselinePath := fs.String("baseline", "", "previous arch-stability JSON report; gates only violations newly introduced since it (cannot be combined with --only-files)")
 	jsonOut := fs.String("json", "arch-stability-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *baselinePath != "" && *onlyFilesPath != "" {
+		fmt.Fprintln(stderr, "arch-metric: --baseline and --only-files cannot be combined")
 		return 2
 	}
 
@@ -170,7 +184,23 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if onlyFiles == nil {
-		return report.ExitCode()
+		if *baselinePath == "" {
+			return report.ExitCode()
+		}
+		baseline, err := readStabilityReportFile(*baselinePath)
+		if err != nil {
+			fmt.Fprintln(stderr, "arch-metric: reading --baseline:", err)
+			return 2
+		}
+		regressions := arch.StabilityRegressions(baseline, report)
+		gated := arch.NewStabilityReport(filesAnalyzed, regressions, *failAbove)
+		fmt.Fprintf(stdout, "\nbaseline scope: %d new stability violation(s)\n", len(gated.Violations))
+		if gated.Passed {
+			fmt.Fprintf(stdout, "PASS (baseline): %d new violation(s) is at or under %d\n", len(gated.Violations), *failAbove)
+		} else {
+			fmt.Fprintf(stdout, "FAIL (baseline): %d new violation(s) exceeds %d\n", len(gated.Violations), *failAbove)
+		}
+		return gated.ExitCode()
 	}
 
 	scopedViolations := filterForRatchet(violations, onlyFiles,
@@ -253,15 +283,39 @@ func readReportFile(path string) (arch.Report, error) {
 	return arch.ReadReport(f)
 }
 
-func loadRuleSet(rulesPath, dir string) (arch.RuleSet, error) {
-	if rulesPath == "" {
-		rulesPath = filepath.Join(dir, arch.DefaultRulesFile)
+func readStabilityReportFile(path string) (arch.StabilityReport, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return arch.StabilityReport{}, err
 	}
+	defer f.Close()
+	return arch.ReadStabilityReport(f)
+}
+
+func resolveRulesPath(rulesPath, dir string) string {
+	if rulesPath == "" {
+		return filepath.Join(dir, arch.DefaultRulesFile)
+	}
+	return rulesPath
+}
+
+func loadRuleSet(rulesPath string) (arch.RuleSet, error) {
 	rules, exceptions, err := arch.LoadRules(rulesPath)
 	if err != nil {
 		return arch.RuleSet{}, fmt.Errorf("loading rules: %w", err)
 	}
 	return arch.Compile(rules, exceptions)
+}
+
+// ruleFileChanged recognizes both the --dir-relative spelling the default
+// rules path uses and an explicit, cwd-relative --rules path. Either match is
+// enough to take the safe full-policy verdict.
+func ruleFileChanged(rulesPath, dir string, onlyFiles map[string]bool) bool {
+	rel, err := filepath.Rel(dir, rulesPath)
+	if err == nil && ratchet.Matches(rel, onlyFiles) {
+		return true
+	}
+	return !filepath.IsAbs(rulesPath) && ratchet.Matches(rulesPath, onlyFiles)
 }
 
 func importerFor(lang string) (importers.Importer, error) {

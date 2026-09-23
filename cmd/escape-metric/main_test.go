@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/escape"
 )
 
 func TestRunUsageError(t *testing.T) {
@@ -17,6 +19,25 @@ func TestRunUsageError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "usage:") {
 		t.Errorf("expected usage message, got %q", stderr.String())
+	}
+}
+
+func TestUsageAndReadmeMatchEscapeLanguageContract(t *testing.T) {
+	want := "--lang " + escape.CanonicalLanguages
+	if !strings.Contains(usage, want) {
+		t.Errorf("usage = %q, want %q", usage, want)
+	}
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "escape-metric check --lang <"+escape.CanonicalLanguages+">") {
+		t.Errorf("README escape usage does not match canonical language list %q", escape.CanonicalLanguages)
+	}
+	for _, lang := range []string{"python", "go", "ts", "swift", "py", "golang", "typescript", "js", "javascript"} {
+		if _, ok := escape.Resolve(lang); !ok {
+			t.Errorf("Resolve(%q) is unsupported but help/docs promise the escape language family", lang)
+		}
 	}
 }
 

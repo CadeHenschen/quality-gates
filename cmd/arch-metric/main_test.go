@@ -229,6 +229,27 @@ func TestRunOnlyFilesMissingFile(t *testing.T) {
 	}
 }
 
+func TestRunPolicyFileChangeUsesFullGate(t *testing.T) {
+	dir := t.TempDir()
+	changed := filepath.Join(dir, "changed.txt")
+	if err := os.WriteFile(changed, []byte("some/repo/root/testdata/arch/golang/.arch-metric-rules.json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/arch/golang",
+		"--fail-above", "0", "--only-files", changed,
+		"--json", filepath.Join(dir, "report.json"),
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (a changed policy must gate every violation; stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "layer policy changed; evaluating every violation") {
+		t.Errorf("expected full-policy ratchet explanation, got:\n%s", stdout.String())
+	}
+}
+
 func TestRunStabilityAgainstFixturePassAndFail(t *testing.T) {
 	jsonPath := filepath.Join(t.TempDir(), "arch-stability-report.json")
 
@@ -478,6 +499,40 @@ func TestRunStabilityOnlyFilesMissingFile(t *testing.T) {
 	}, &stdout, &stderr)
 	if code != 2 {
 		t.Errorf("exit code = %d, want 2 (missing --only-files file)", code)
+	}
+}
+
+func TestRunStabilityBaselineGatesOnlyRegressions(t *testing.T) {
+	dir := t.TempDir()
+	baseline := filepath.Join(dir, "baseline.json")
+	// The existing stable -> unstable violation is grandfathered by the
+	// baseline, so the same full report passes the baseline gate.
+	if err := os.WriteFile(baseline, []byte(`{"violations":[{"from_pkg":"stable","to_pkg":"unstable"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"stability", "--lang", "go", "--dir", "../../testdata/arch/golang-stability",
+		"--fail-above", "0", "--baseline", baseline,
+		"--json", filepath.Join(dir, "report.json"),
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 (existing violation is in baseline; stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "baseline scope: 0 new stability violation(s)") {
+		t.Errorf("expected baseline scope, got:\n%s", stdout.String())
+	}
+}
+
+func TestRunStabilityRejectsBaselineAndOnlyFiles(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"stability", "--lang", "go", "--dir", "../../testdata/arch/golang-stability",
+		"--baseline", "old.json", "--only-files", "changed.txt",
+	}, &stdout, &stderr)
+	if code != 2 || !strings.Contains(stderr.String(), "cannot be combined") {
+		t.Errorf("exit code/stderr = %d/%q, want a mutual-exclusion error", code, stderr.String())
 	}
 }
 

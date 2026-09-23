@@ -86,3 +86,18 @@ func writeFile(t *testing.T, dir, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+func FuzzResolveFileImports(f *testing.F) {
+	f.Add("from . import b\n")
+	f.Add("import b\n")
+	f.Add("from ..x import y as z\n")
+	f.Fuzz(func(t *testing.T, source string) {
+		dir := t.TempDir()
+		writeFile(t, dir, "a.py", source)
+		writeFile(t, dir, "b.py", "pass\n")
+		_, err := resolveFileImports(dir, "a.py", map[string]bool{"a.py": true, "b.py": true})
+		if err != nil {
+			t.Fatalf("resolveFileImports returned an unexpected filesystem error: %v", err)
+		}
+	})
+}

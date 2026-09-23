@@ -126,6 +126,30 @@ type StabilityReport struct {
 	Passed        bool                 `json:"passed"`
 }
 
+// ReadStabilityReport reads a report previously written by WriteJSON.
+func ReadStabilityReport(r io.Reader) (StabilityReport, error) {
+	return reportio.ReadReport[StabilityReport](r)
+}
+
+// StabilityRegressions returns violations present in new but not old. It
+// matches package pairs rather than the representative file edge: stability
+// is a package-graph property, and a file moving within an unchanged package
+// relationship is not a new architectural regression.
+func StabilityRegressions(old, new StabilityReport) []StabilityViolation {
+	type key struct{ from, to string }
+	previous := make(map[key]bool, len(old.Violations))
+	for _, v := range old.Violations {
+		previous[key{v.FromPkg, v.ToPkg}] = true
+	}
+	var out []StabilityViolation
+	for _, v := range new.Violations {
+		if !previous[key{v.FromPkg, v.ToPkg}] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // NewStabilityReport builds a StabilityReport and applies the fail-above
 // gate.
 func NewStabilityReport(filesAnalyzed int, violations []StabilityViolation, failAbove int) StabilityReport {

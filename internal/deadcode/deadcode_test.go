@@ -281,3 +281,15 @@ func TestParsePeripheryRejectsBadLocation(t *testing.T) {
 		t.Errorf("an unreadable location must be an error naming it: %v", err)
 	}
 }
+
+func FuzzParse(f *testing.F) {
+	f.Add(`null`)
+	f.Add(`{"issues":[]}`)
+	f.Add(`file.py:1: unused function 'f' (80% confidence)`)
+	f.Add(`[{"kind":"function","name":"f","hints":["unused"],"location":"a.swift:1:1"}]`)
+	f.Fuzz(func(t *testing.T, report string) {
+		for _, format := range []string{"", FormatDeadcode, FormatKnip, FormatVulture, FormatPeriphery} {
+			_, _ = Parse([]byte(report), Options{Format: format})
+		}
+	})
+}

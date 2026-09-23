@@ -204,3 +204,19 @@ func TestUnterminatedStringDoesNotHang(t *testing.T) {
 		t.Errorf("got %v, want at least let/s/= before the dangling string", texts(toks))
 	}
 }
+
+func FuzzTokenize(f *testing.F) {
+	f.Add([]byte(`func f() { return "ok" }`))
+	f.Add([]byte(`/* nested /* comment */`))
+	f.Add([]byte("\xff\x00\n"))
+	f.Fuzz(func(t *testing.T, source []byte) {
+		tokens := Tokenize(source)
+		lastLine := 1
+		for _, token := range tokens {
+			if token.Line < lastLine || token.Line < 1 {
+				t.Errorf("invalid token line sequence %d after %d: %+v", token.Line, lastLine, token)
+			}
+			lastLine = token.Line
+		}
+	})
+}
