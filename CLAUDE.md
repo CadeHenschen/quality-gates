@@ -345,11 +345,40 @@ walks nested `FuncLit`s into the same `FuncDecl`'s complexity count rather
 than emitting them separately — by only looking for new function starts
 at the top level (outside any function body already being scanned), so a
 nested `func`'s branches fold into the enclosing function automatically,
-with no special-casing needed. Computed-property accessors
-(`get`/`set`/`willSet`/`didSet`) are the other side of the same v1 scope
-choice: their bodies are brace-tracked over (so they can't corrupt
-anything) but never emitted as their own entry, so their complexity is
-simply invisible rather than misattributed.
+with no special-casing needed.
+
+**Computed properties and property observers are analyzed too** (added
+after a real bug report: a health-suite app's `crap-metric` report looked
+like "every method is 100% covered" because a bare implicit-getter
+computed property — `var progress: Double { cond ? a : b }`, no
+`get`/`set` keyword at all — was silently skipped rather than reported at
+its real, uncovered score. Silently-dropped-from-the-report and
+"genuinely 100%" render identically in the table, which is what made the
+gap invisible). `extractPropertyFunctions` (`functions.go`) disambiguates
+by Swift's own grammar, the same "under-detect precisely, document
+rather than guess" posture as everything else in this file:
+
+  - No stored value, body follows the type directly (`var x: Int { ... }`):
+    a bare body with no `get`/`set` keyword is the implicit getter,
+    emitted as `Type.x`; an explicit `get`/`set` is split into
+    `Type.x.get`/`Type.x.set`, each scored independently.
+  - A stored property's `willSet`/`didSet` (`var x: Int = 0 { didSet {...} }`):
+    only the observer is emitted (`Type.x.didSet`); the stored declaration
+    itself has nothing to measure.
+  - Anything else with a `{` after the type/default value — chiefly a
+    stored property whose default value is itself a closure literal
+    (`var f: () -> Void = { ... }`) — is brace-tracked over like a nested
+    local func's body, not emitted, since it isn't an accessor at all and
+    guessing would misattribute it.
+
+Disambiguation is grammar-shaped, not a name lookup: whether a `{` found
+right after the `var`'s type/default value is immediately followed by
+`get`/`set`/`willSet`/`didSet` decides which of the three cases applies
+— see `extractPropertyFunctions` and `scanPropertyAccessors`. Regression
+fixtures live in `testdata/crap/swift-property/` (kept separate from
+`testdata/crap/swift/sample.swift` precisely so this addition's fixture
+edits wouldn't ride on — and silently break — that file's own
+line-number-dependent assertions).
 
 **cycle-metric deliberately excludes Swift too, for a different reason
 than Go.** Go's exclusion is "the compiler already forbids it, so the

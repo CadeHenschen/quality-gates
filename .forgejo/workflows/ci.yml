@@ -15,9 +15,16 @@ jobs:
     steps:
       # actions/checkout is a Node-based action; golang:1.26-alpine has no
       # Node.js by default. Same workaround as this module's four
-      # predecessor repos' CI (and gamectl's).
-      - name: Install Node (checkout), Python (radon), curl (npm fixture fetch)
-        run: apk add --no-cache nodejs npm curl python3 py3-pip
+      # predecessor repos' CI (and gamectl's). gcc/musl-dev are here for
+      # `go test -race` below: cgo needs a real C compiler, which the
+      # base alpine image doesn't ship, and without it -race fails the
+      # whole job fast with no build output at all (the race-enabled
+      # build errors out before go test ever runs, and this step's `set
+      # -e` default kills the script before its own `cat test.log` can
+      # run) — easy to misread as a flaky runner rather than a missing
+      # dependency.
+      - name: Install Node, Python, curl, and C compiler for race tests
+        run: apk add --no-cache nodejs npm curl python3 py3-pip gcc musl-dev
 
       - uses: https://code.forgejo.org/actions/checkout@v4
 

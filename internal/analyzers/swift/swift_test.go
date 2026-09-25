@@ -83,15 +83,28 @@ func TestAnalyzeNestedLocalFuncFoldsIntoEnclosing(t *testing.T) {
 	}
 }
 
-// Computed-property accessors must not appear as their own entries, and
-// must not corrupt the line ranges of functions before/after them.
-func TestAnalyzeComputedPropertyNotEmitted(t *testing.T) {
+// Computed-property accessors are analyzed as their own crap.Function,
+// qualified "Type.prop.accessor" (not "Type.prop" or "Type.accessor"), and
+// must not corrupt the line ranges of functions before/after them. See
+// property_test.go for the bare-implicit-getter and observer cases, which
+// use their own fixture to avoid perturbing this one's line numbers.
+func TestAnalyzeComputedPropertyAccessorsAnalyzed(t *testing.T) {
 	fns := analyzeFixture(t, "")
+	get := findFunc(t, fns, "Calculator.doubled.get")
+	// starts at 1, +1 for "if" = 2.
+	if get.Complexity != 2 {
+		t.Errorf("doubled.get complexity = %d, want 2", get.Complexity)
+	}
+	set := findFunc(t, fns, "Calculator.doubled.set")
+	if set.Complexity != 1 {
+		t.Errorf("doubled.set complexity = %d, want 1", set.Complexity)
+	}
 	for _, fn := range fns {
 		if fn.Name == "Calculator.doubled" || fn.Name == "Calculator.get" || fn.Name == "Calculator.set" {
-			t.Errorf("computed property accessor should not be its own entry, got %+v", fn)
+			t.Errorf("wrong qualified name for a computed-property accessor, got %+v", fn)
 		}
 	}
+
 	fn := findFunc(t, fns, "Calculator.plain")
 	if fn.StartLine != 46 || fn.EndLine != 48 {
 		t.Errorf("plain range = [%d,%d], want [46,48] (unaffected by the preceding computed property)", fn.StartLine, fn.EndLine)

@@ -3,14 +3,14 @@
 // same way this sits on swiftlex).
 //
 // Function/init/deinit/subscript bodies are found by a single token-stream
-// walk that tracks curly-brace depth, rather than a real parser. Two
-// deliberate v1 scope decisions fall out of that:
+// walk that tracks curly-brace depth, rather than a real parser. A
+// computed property or property observer (get/set/willSet/didSet) is
+// analyzed the same way, qualified "Type.prop.accessor" — see
+// extractPropertyFunctions in functions.go and CLAUDE.md's Swift support
+// entry for why a bare implicit-getter property needed this even though
+// it has no accessor keyword at all. One deliberate v1 scope decision
+// remains:
 //
-//   - Computed-property accessors (get/set/willSet/didSet) are never
-//     emitted as their own crap.Function — their bodies are brace-tracked
-//     over (so they don't corrupt anything) but their complexity is simply
-//     not reported, rather than guessed at with a qualified name like
-//     "Type.prop.get". A natural v2 addition, not attempted here.
 //   - A nested local func (a real Swift feature Go has no equivalent of)
 //     found while already inside a function body is NOT emitted as its own
 //     crap.Function — its branches fold into the *enclosing* function's
