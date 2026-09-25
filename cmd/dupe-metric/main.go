@@ -18,7 +18,7 @@ import (
 )
 
 const usage = `usage:
-  dupe-metric check --lang python|go|ts|swift --dir DIR [--min-tokens N] [--fail-above PCT] [--top N] [--only-files PATH] [--json PATH]
+  dupe-metric check --lang python|go|ts|swift --dir DIR [--min-tokens N] [--fail-above PCT] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
   dupe-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -44,7 +44,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage)
 		return 2
 	}
+	return runCheck(args[1:], stdout, stderr)
+}
 
+func runCheck(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	lang := fs.String("lang", "", "language to analyze: python, go, or ts")
@@ -53,8 +56,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Float64("fail-above", 5, "duplication percentage above which the gate fails")
 	top := fs.Int("top", 20, "number of duplicate blocks to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to duplicate blocks touching these files, so pre-existing duplication elsewhere doesn't block; omit to check the whole --dir as before")
+	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not tokenized")
 	jsonOut := fs.String("json", "dupe-report.json", "path to write the full JSON report")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
@@ -80,7 +84,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// *gate* only, so nothing is hidden, just not blocking.
 	clones := dupe.Find(files, *minTokens)
 	report := dupe.NewReport(files, clones, *failAbove)
+	if *requireAnalysis {
+		report, err = withDupeEvidence(report, files, *dir, *lang, nil)
+		if err != nil {
+			fmt.Fprintln(stderr, "dupe-metric: analysis evidence:", err)
+			return 2
+		}
+	}
 	report.WriteTable(stdout, *top)
+	if report.Analysis != nil {
+		report.Analysis.WriteText(stdout)
+	}
 
 	if *jsonOut != "" {
 		if err := writeJSONReport(report, *jsonOut); err != nil {
@@ -95,6 +109,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	scopedFiles, scopedClones := filterForRatchet(files, clones, onlyFiles)
 	scoped := dupe.NewReport(scopedFiles, scopedClones, *failAbove)
+	if *requireAnalysis {
+		scoped, err = withDupeEvidence(scoped, files, *dir, *lang, onlyFiles)
+		if err != nil {
+			fmt.Fprintln(stderr, "dupe-metric: analysis evidence:", err)
+			return 2
+		}
+		scoped.Analysis.WriteText(stdout)
+	}
 	fmt.Fprintf(stdout, "\nratchet scope: %d duplicate block(s) touching changed files, %.2f%% of %d changed-file lines\n",
 		len(scoped.Clones), scoped.DuplicationPercent, scoped.TotalLines)
 	if scoped.Passed {

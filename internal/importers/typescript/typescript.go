@@ -26,7 +26,7 @@ type Importer struct{}
 // Matches the specifier string in any of: `import ... from "x"`,
 // `export ... from "x"`, `import "x"`, `import("x")`, `require("x")` —
 // single or double quotes.
-var specifierRe = regexp.MustCompile(`(?:from\s+|import\s*\(\s*|require\s*\(\s*)['"]([^'"]+)['"]`)
+var specifierRe = regexp.MustCompile(`(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)['"]([^'"]+)['"]`)
 
 var codeExtensions = []string{".ts", ".tsx", ".js", ".jsx"}
 
@@ -43,11 +43,12 @@ func (Importer) Import(opts importers.Options) (cycle.Graph, int, error) {
 
 	graph := cycle.Graph{Edges: map[string][]string{}}
 	for _, f := range files {
-		targets, err := resolveFileImports(opts.Dir, f, existing)
+		targets, unresolved, err := resolveWithIssues(opts.Dir, f, existing)
 		if err != nil {
 			return cycle.Graph{}, 0, err
 		}
 		graph.Edges[f] = targets
+		graph.Unresolved = append(graph.Unresolved, unresolved...)
 	}
 
 	return graph, len(files), nil
@@ -82,17 +83,18 @@ func walkCode(dir string) ([]string, error) {
 	return files, err
 }
 
-func resolveFileImports(dir, file string, existing map[string]bool) ([]string, error) {
+func resolveWithIssues(dir, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
 	data, err := os.ReadFile(filepath.Join(dir, file))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	fileDir := filepath.ToSlash(filepath.Dir(file))
 	seen := map[string]bool{}
 	var targets []string
+	var unresolved []cycle.ImportIssue
 
-	for _, m := range specifierRe.FindAllStringSubmatch(string(data), -1) {
+	for _, m := range specifierRe.FindAllStringSubmatch(withoutComments(data), -1) {
 		spec := m[1]
 		if !strings.HasPrefix(spec, ".") {
 			continue // bare/aliased import — external, not resolved (see package doc)
@@ -105,14 +107,74 @@ func resolveFileImports(dir, file string, existing map[string]bool) ([]string, e
 		joined = filepath.ToSlash(filepath.Clean(joined))
 
 		target := resolveModule(joined, existing)
-		if target == "" || target == file || seen[target] {
+		if target == "" {
+			unresolved = append(unresolved, cycle.ImportIssue{File: file, Specifier: spec})
+			continue
+		}
+		if target == file || seen[target] {
 			continue
 		}
 		seen[target] = true
 		targets = append(targets, target)
 	}
 
-	return targets, nil
+	return targets, unresolved, nil
+}
+
+// withoutComments masks comments while preserving quoted import specifiers.
+// A raw regex over comments would make strict unresolved-import checks fail
+// on documentation examples that are not imports.
+func withoutComments(src []byte) string {
+	out := append([]byte(nil), src...)
+	var quote byte
+	line, block := false, false
+	for i := 0; i < len(src); i++ {
+		if line {
+			if src[i] == '\n' {
+				line = false
+			} else {
+				out[i] = ' '
+			}
+			continue
+		}
+		if block {
+			if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
+				out[i], out[i+1] = ' ', ' '
+				i++
+				block = false
+			} else if src[i] != '\n' {
+				out[i] = ' '
+			}
+			continue
+		}
+		if quote != 0 {
+			if src[i] == '\\' && i+1 < len(src) {
+				i++
+				continue
+			}
+			if src[i] == quote {
+				quote = 0
+			}
+			continue
+		}
+		if src[i] == '\'' || src[i] == '"' || src[i] == '`' {
+			quote = src[i]
+			continue
+		}
+		if src[i] == '/' && i+1 < len(src) {
+			switch src[i+1] {
+			case '/':
+				out[i], out[i+1] = ' ', ' '
+				i++
+				line = true
+			case '*':
+				out[i], out[i+1] = ' ', ' '
+				i++
+				block = true
+			}
+		}
+	}
+	return string(out)
 }
 
 // resolveModule tries a specifier (already joined + cleaned, extension-

@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/arch"
+	"git.roost-r.com/cadeh/quality-gates/internal/cycle"
+	"git.roost-r.com/cadeh/quality-gates/internal/evidence"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/python"
@@ -21,8 +23,8 @@ import (
 )
 
 const usage = `usage:
-  arch-metric check     --lang python|ts|go --dir DIR [--rules PATH] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
-  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N] [--top N] [--only-files PATH | --baseline PATH] [--json PATH]
+  arch-metric check     --lang python|ts|go --dir DIR [--rules PATH] [--fail-above N] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
+  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N] [--top N] [--require-analysis] [--only-files PATH | --baseline PATH] [--json PATH]
   arch-metric diff      --old PATH --new PATH [--top N] [--json]
   arch-metric version`
 
@@ -57,6 +59,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+type ratchetScope struct {
+	dir, lang                string
+	failAbove, filesAnalyzed int
+	requireAnalysis          bool
+	analyzedFiles            []string
+	unresolved               []cycle.ImportIssue
+	onlyFiles                map[string]bool
+}
+
 func runCheck(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -66,6 +77,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Int("fail-above", 0, "number of violations above which the gate fails")
 	top := fs.Int("top", 20, "number of violations to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to violations touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not in the import graph")
 	jsonOut := fs.String("json", "arch-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -101,7 +113,25 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	edges := arch.EdgesFromFileGraph(graph)
 	violations := ruleSet.Check(edges)
 	report := arch.NewReport(filesAnalyzed, violations, *failAbove)
+	report.UnresolvedImports = graph.Unresolved
+	analyzedFiles := analyzedFileNames(graph.Edges)
+	if *requireAnalysis {
+		analysis, err := evidence.CheckAll(*dir, *lang, analyzedFiles, nil)
+		if err != nil {
+			fmt.Fprintln(stderr, "arch-metric: analysis evidence:", err)
+			return 2
+		}
+		analysis = analysis.WithUnresolved(unresolvedFor(*dir, graph.Unresolved, nil))
+		report.Analysis = &analysis
+		report.Passed = report.Passed && analysis.Passed
+	}
 	report.WriteTable(stdout, *top)
+	if len(graph.Unresolved) > 0 {
+		fmt.Fprintf(stdout, "%d unresolved relative import(s)\n", len(graph.Unresolved))
+	}
+	if report.Analysis != nil {
+		report.Analysis.WriteText(stdout)
+	}
 
 	if *jsonOut != "" {
 		if err := writeJSONReport(report, *jsonOut); err != nil {
@@ -113,25 +143,44 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	if onlyFiles == nil {
 		return report.ExitCode()
 	}
+	scope := ratchetScope{dir: *dir, lang: *lang, failAbove: *failAbove, filesAnalyzed: filesAnalyzed,
+		requireAnalysis: *requireAnalysis, analyzedFiles: analyzedFiles,
+		unresolved: graph.Unresolved, onlyFiles: onlyFiles}
+	return checkRatchet(scope, resolvedRulesPath, violations, report, stdout, stderr)
+}
+
+func checkRatchet(scope ratchetScope, rulesPath string, violations []arch.Violation,
+	report arch.Report, stdout, stderr io.Writer) int {
 	// Rules and exceptions change the meaning of every edge, not merely
 	// the edges in a source file named in --only-files. A ratchet must not
 	// let a stricter policy file pass simply because no violating source
 	// file changed in the same commit.
-	if ruleFileChanged(resolvedRulesPath, *dir, onlyFiles) {
+	if ruleFileChanged(rulesPath, scope.dir, scope.onlyFiles) {
 		fmt.Fprintln(stdout, "\nratchet scope: layer policy changed; evaluating every violation")
 		return report.ExitCode()
 	}
 
-	scopedViolations := filterForRatchet(violations, onlyFiles,
+	scopedViolations := filterForRatchet(violations, scope.onlyFiles,
 		func(v arch.Violation) string { return v.File },
 		func(v arch.Violation) string { return v.Import },
 	)
-	scoped := arch.NewReport(filesAnalyzed, scopedViolations, *failAbove)
+	scoped := arch.NewReport(scope.filesAnalyzed, scopedViolations, scope.failAbove)
+	if scope.requireAnalysis {
+		analysis, err := evidence.CheckAll(scope.dir, scope.lang, scope.analyzedFiles, scope.onlyFiles)
+		if err != nil {
+			fmt.Fprintln(stderr, "arch-metric: analysis evidence:", err)
+			return 2
+		}
+		analysis = analysis.WithUnresolved(unresolvedFor(scope.dir, scope.unresolved, scope.onlyFiles))
+		scoped.Analysis = &analysis
+		scoped.Passed = scoped.Passed && analysis.Passed
+		analysis.WriteText(stdout)
+	}
 	fmt.Fprintf(stdout, "\nratchet scope: %d violation(s) touching changed files\n", len(scoped.Violations))
 	if scoped.Passed {
-		fmt.Fprintf(stdout, "PASS (ratcheted): %d violation(s) is at or under %d\n", len(scoped.Violations), *failAbove)
+		fmt.Fprintf(stdout, "PASS (ratcheted): %d violation(s) is at or under %d\n", len(scoped.Violations), scope.failAbove)
 	} else {
-		fmt.Fprintf(stdout, "FAIL (ratcheted): %d violation(s) exceeds %d\n", len(scoped.Violations), *failAbove)
+		fmt.Fprintf(stdout, "FAIL (ratcheted): %d violation(s) exceeds %d\n", len(scoped.Violations), scope.failAbove)
 	}
 	return scoped.ExitCode()
 }
@@ -144,6 +193,7 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	failAbove := fs.Int("fail-above", 0, "number of stable-dependency violations above which the gate fails")
 	top := fs.Int("top", 20, "number of violations to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to violations touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not in the import graph")
 	baselinePath := fs.String("baseline", "", "previous arch-stability JSON report; gates only violations newly introduced since it (cannot be combined with --only-files)")
 	jsonOut := fs.String("json", "arch-stability-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
@@ -174,7 +224,25 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	edges := arch.EdgesFromFileGraph(graph)
 	violations := arch.CheckStability(edges)
 	report := arch.NewStabilityReport(filesAnalyzed, violations, *failAbove)
+	report.UnresolvedImports = graph.Unresolved
+	analyzedFiles := analyzedFileNames(graph.Edges)
+	if *requireAnalysis {
+		analysis, err := evidence.CheckAll(*dir, *lang, analyzedFiles, nil)
+		if err != nil {
+			fmt.Fprintln(stderr, "arch-metric: analysis evidence:", err)
+			return 2
+		}
+		analysis = analysis.WithUnresolved(unresolvedFor(*dir, graph.Unresolved, nil))
+		report.Analysis = &analysis
+		report.Passed = report.Passed && analysis.Passed
+	}
 	report.WriteTable(stdout, *top)
+	if len(graph.Unresolved) > 0 {
+		fmt.Fprintf(stdout, "%d unresolved relative import(s)\n", len(graph.Unresolved))
+	}
+	if report.Analysis != nil {
+		report.Analysis.WriteText(stdout)
+	}
 
 	if *jsonOut != "" {
 		if err := writeJSONReport(report, *jsonOut); err != nil {
@@ -184,37 +252,69 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if onlyFiles == nil {
-		if *baselinePath == "" {
-			return report.ExitCode()
-		}
-		baseline, err := readStabilityReportFile(*baselinePath)
-		if err != nil {
-			fmt.Fprintln(stderr, "arch-metric: reading --baseline:", err)
-			return 2
-		}
-		regressions := arch.StabilityRegressions(baseline, report)
-		gated := arch.NewStabilityReport(filesAnalyzed, regressions, *failAbove)
-		fmt.Fprintf(stdout, "\nbaseline scope: %d new stability violation(s)\n", len(gated.Violations))
-		if gated.Passed {
-			fmt.Fprintf(stdout, "PASS (baseline): %d new violation(s) is at or under %d\n", len(gated.Violations), *failAbove)
-		} else {
-			fmt.Fprintf(stdout, "FAIL (baseline): %d new violation(s) exceeds %d\n", len(gated.Violations), *failAbove)
-		}
-		return gated.ExitCode()
+		return stabilityBaseline(*baselinePath, *failAbove, filesAnalyzed, report, stdout, stderr)
 	}
+	scope := ratchetScope{dir: *dir, lang: *lang, failAbove: *failAbove, filesAnalyzed: filesAnalyzed,
+		requireAnalysis: *requireAnalysis, analyzedFiles: analyzedFiles,
+		unresolved: graph.Unresolved, onlyFiles: onlyFiles}
+	return stabilityRatchet(scope, violations, stdout, stderr)
+}
 
-	scopedViolations := filterForRatchet(violations, onlyFiles,
+func stabilityBaseline(path string, failAbove, filesAnalyzed int, report arch.StabilityReport, stdout, stderr io.Writer) int {
+	if path == "" {
+		return report.ExitCode()
+	}
+	baseline, err := readStabilityReportFile(path)
+	if err != nil {
+		fmt.Fprintln(stderr, "arch-metric: reading --baseline:", err)
+		return 2
+	}
+	regressions := arch.StabilityRegressions(baseline, report)
+	gated := arch.NewStabilityReport(filesAnalyzed, regressions, failAbove)
+	if report.Analysis != nil {
+		gated.Passed = gated.Passed && report.Analysis.Passed
+	}
+	fmt.Fprintf(stdout, "\nbaseline scope: %d new stability violation(s)\n", len(gated.Violations))
+	if gated.Passed {
+		fmt.Fprintf(stdout, "PASS (baseline): %d new violation(s) is at or under %d\n", len(gated.Violations), failAbove)
+	} else {
+		fmt.Fprintf(stdout, "FAIL (baseline): %d new violation(s) exceeds %d\n", len(gated.Violations), failAbove)
+	}
+	return gated.ExitCode()
+}
+
+func stabilityRatchet(scope ratchetScope, violations []arch.StabilityViolation, stdout, stderr io.Writer) int {
+	scopedViolations := filterForRatchet(violations, scope.onlyFiles,
 		func(v arch.StabilityViolation) string { return v.File },
 		func(v arch.StabilityViolation) string { return v.Import },
 	)
-	scoped := arch.NewStabilityReport(filesAnalyzed, scopedViolations, *failAbove)
+	scoped := arch.NewStabilityReport(scope.filesAnalyzed, scopedViolations, scope.failAbove)
+	if scope.requireAnalysis {
+		analysis, err := evidence.CheckAll(scope.dir, scope.lang, scope.analyzedFiles, scope.onlyFiles)
+		if err != nil {
+			fmt.Fprintln(stderr, "arch-metric: analysis evidence:", err)
+			return 2
+		}
+		analysis = analysis.WithUnresolved(unresolvedFor(scope.dir, scope.unresolved, scope.onlyFiles))
+		scoped.Analysis = &analysis
+		scoped.Passed = scoped.Passed && analysis.Passed
+		analysis.WriteText(stdout)
+	}
 	fmt.Fprintf(stdout, "\nratchet scope: %d violation(s) touching changed files\n", len(scoped.Violations))
 	if scoped.Passed {
-		fmt.Fprintf(stdout, "PASS (ratcheted): %d violation(s) is at or under %d\n", len(scoped.Violations), *failAbove)
+		fmt.Fprintf(stdout, "PASS (ratcheted): %d violation(s) is at or under %d\n", len(scoped.Violations), scope.failAbove)
 	} else {
-		fmt.Fprintf(stdout, "FAIL (ratcheted): %d violation(s) exceeds %d\n", len(scoped.Violations), *failAbove)
+		fmt.Fprintf(stdout, "FAIL (ratcheted): %d violation(s) exceeds %d\n", len(scoped.Violations), scope.failAbove)
 	}
 	return scoped.ExitCode()
+}
+
+func analyzedFileNames(edges map[string][]string) []string {
+	var files []string
+	for file := range edges {
+		files = append(files, file)
+	}
+	return files
 }
 
 // jsonReport is implemented by both arch.Report and arch.StabilityReport —

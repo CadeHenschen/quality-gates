@@ -40,11 +40,12 @@ func (Importer) Import(opts importers.Options) (cycle.Graph, int, error) {
 
 	graph := cycle.Graph{Edges: map[string][]string{}}
 	for _, f := range files {
-		targets, err := resolveFileImports(opts.Dir, f, existing)
+		targets, unresolved, err := resolveWithIssues(opts.Dir, f, existing)
 		if err != nil {
 			return cycle.Graph{}, 0, err
 		}
 		graph.Edges[f] = targets
+		graph.Unresolved = append(graph.Unresolved, unresolved...)
 	}
 
 	return graph, len(files), nil
@@ -77,17 +78,16 @@ func walkPython(dir string) ([]string, error) {
 	return files, err
 }
 
-// resolveFileImports reads file (relative to dir) and returns every
-// import target that resolves to another scanned file.
-func resolveFileImports(dir, file string, existing map[string]bool) ([]string, error) {
+func resolveWithIssues(dir, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
 	data, err := os.ReadFile(filepath.Join(dir, file))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	fileDir := filepath.ToSlash(filepath.Dir(file)) // "." for a top-level file
 	seen := map[string]bool{}
 	var targets []string
+	var unresolved []cycle.ImportIssue
 	add := func(candidate string) {
 		candidate = filepath.ToSlash(filepath.Clean(candidate))
 		if candidate == file || seen[candidate] {
@@ -109,6 +109,7 @@ func resolveFileImports(dir, file string, existing map[string]bool) ([]string, e
 	for _, line := range strings.Split(string(data), "\n") {
 		if m := fromImportRe.FindStringSubmatch(line); m != nil {
 			dots, module, names := len(m[1]), m[2], m[3]
+			before := len(targets)
 
 			base := fileDir
 			for i := 1; i < dots; i++ { // 1 dot = current dir; each extra goes up one more
@@ -122,6 +123,9 @@ func resolveFileImports(dir, file string, existing map[string]bool) ([]string, e
 				tryModule(joinModule(moduleBase, name, true))
 			}
 			tryModule(moduleBase)
+			if dots > 0 && module != "" && len(targets) == before {
+				unresolved = append(unresolved, cycle.ImportIssue{File: file, Specifier: strings.Repeat(".", dots) + module})
+			}
 			continue
 		}
 		if m := importRe.FindStringSubmatch(line); m != nil {
@@ -130,7 +134,7 @@ func resolveFileImports(dir, file string, existing map[string]bool) ([]string, e
 			}
 		}
 	}
-	return targets, nil
+	return targets, unresolved, nil
 }
 
 // joinModule builds a "/"-joined module path from a base directory (which

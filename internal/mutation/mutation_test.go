@@ -122,6 +122,19 @@ func TestNoVerdictMutantsScoreFull(t *testing.T) {
 	}
 }
 
+func TestMinimumGradedRequiresEvidence(t *testing.T) {
+	for _, mutants := range [][]Mutant{nil, {{File: "a.go", Status: Ignored}}} {
+		r := NewReport(mutants, 60, false).WithMinimumGraded(1)
+		if r.Passed || !r.InsufficientEvidence || r.Graded != 0 {
+			t.Errorf("missing evidence should fail: %+v", r)
+		}
+	}
+	r := NewReport([]Mutant{{File: "a.go", Status: Killed}}, 60, false).WithMinimumGraded(1)
+	if !r.Passed || r.InsufficientEvidence {
+		t.Errorf("one graded mutant should pass: %+v", r)
+	}
+}
+
 func TestWriteTableListsMissesAndVerdict(t *testing.T) {
 	var sb strings.Builder
 	NewReport(parseFixture(t, "gremlins.json", Options{}), 90, false).WriteTable(&sb, 1)

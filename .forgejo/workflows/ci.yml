@@ -65,8 +65,8 @@ jobs:
         run: |
           go build ./...
           go vet ./...
-          go test -race ./... -v > test.log 2>&1
-          status=$?
+          status=0
+          go test -race ./... -v > test.log 2>&1 || status=$?
           cat test.log
           if [ $status -ne 0 ]; then
             exit $status

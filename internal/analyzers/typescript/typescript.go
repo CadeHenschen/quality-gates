@@ -15,6 +15,7 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 	"git.roost-r.com/cadeh/quality-gates/internal/embedscript"
+	"git.roost-r.com/cadeh/quality-gates/internal/evidence"
 )
 
 //go:embed complexity.js
@@ -104,6 +105,13 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			MaxNestingDepth: f.MaxNestingDepth,
 			FileLines:       f.FileLines,
 		})
+	}
+	if opts.Visited != nil {
+		files, err := evidence.Eligible(opts.Dir, "ts", false)
+		if err != nil {
+			return nil, err
+		}
+		*opts.Visited = append(*opts.Visited, files...)
 	}
 	return out2, nil
 }

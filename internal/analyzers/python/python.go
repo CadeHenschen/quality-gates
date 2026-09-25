@@ -13,6 +13,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
+	"git.roost-r.com/cadeh/quality-gates/internal/evidence"
 )
 
 type Analyzer struct{}
@@ -104,6 +105,13 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 				FileLines:       size.FileLines,
 			})
 		}
+	}
+	if opts.Visited != nil {
+		files, err := evidence.Eligible(opts.Dir, "python", false)
+		if err != nil {
+			return nil, err
+		}
+		*opts.Visited = append(*opts.Visited, files...)
 	}
 	return out, nil
 }

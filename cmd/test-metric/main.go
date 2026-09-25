@@ -24,8 +24,8 @@ import (
 )
 
 const usage = `usage:
-  test-metric check    --lang go|python|ts|swift --dir DIR [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--top N] [--only-files PATH] [--json PATH]
-  test-metric mutation --report PATH [--dir DIR] [--fail-below PCT] [--covered-only] [--min-mutants N] [--top N] [--only-files PATH] [--json PATH]
+  test-metric check    --lang go|python|ts|swift --dir DIR [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
+  test-metric mutation --report PATH [--dir DIR] [--lang go|python|ts|swift] [--fail-below PCT] [--covered-only] [--min-mutants N] [--minimum-graded N] [--top N] [--only-files PATH] [--json PATH]
   test-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -121,6 +121,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	includeList := fs.String("include", "", "comma-separated opt-in checks to enable (off by default: "+strings.Join(testmetric.OptIn, ", ")+")")
 	top := fs.Int("top", 20, "number of findings to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to findings in these files, so pre-existing ones elsewhere don't block; omit to check the whole --dir")
+	requireAnalysis := fs.Bool("require-analysis", false, "fail when expected test files produce no analyzed tests")
 	jsonOut := fs.String("json", "test-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -154,13 +155,16 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	opts := testmetric.Options{MinAssertions: *minAssertions, Ignore: ignore}
 	numTests, assertions := testmetric.Counts(tests)
 	report := testmetric.NewReport(testmetric.Analyze(tests, opts), numTests, assertions, *failAbove)
-	report.WriteTable(stdout, *top)
-
-	if *jsonOut != "" {
-		if err := writeJSON(report.WriteJSON, *jsonOut); err != nil {
-			fmt.Fprintln(stderr, "test-metric: write report:", err)
+	if *requireAnalysis {
+		report, err = withTestAnalysis(report, *dir, *lang, tests, nil)
+		if err != nil {
+			fmt.Fprintln(stderr, "test-metric: analysis evidence:", err)
 			return 2
 		}
+	}
+	if err := publishCheckReport(report, stdout, *top, *jsonOut); err != nil {
+		fmt.Fprintln(stderr, "test-metric: write report:", err)
+		return 2
 	}
 	if onlyFiles == nil {
 		return report.ExitCode()
@@ -171,12 +175,15 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	touched := filterTests(tests, onlyFiles)
 	touchedTests, touchedAsserts := testmetric.Counts(touched)
 	scoped := testmetric.NewReport(testmetric.Analyze(touched, opts), touchedTests, touchedAsserts, *failAbove)
-	fmt.Fprintf(stdout, "\nratchet scope: %d finding(s) across %d test(s) in changed files\n", len(scoped.Findings), scoped.Tests)
-	verdict := "PASS"
-	if !scoped.Passed {
-		verdict = "FAIL"
+	if *requireAnalysis {
+		scoped, err = withTestAnalysis(scoped, *dir, *lang, tests, onlyFiles)
+		if err != nil {
+			fmt.Fprintln(stderr, "test-metric: analysis evidence:", err)
+			return 2
+		}
+		scoped.Analysis.WriteText(stdout)
 	}
-	fmt.Fprintf(stdout, "%s (ratcheted): %d finding(s), gate is %d\n", verdict, len(scoped.Findings), *failAbove)
+	writeTestRatchet(stdout, scoped, *failAbove)
 	return scoped.ExitCode()
 }
 
@@ -185,9 +192,11 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	reportPath := fs.String("report", "", "mutation report to gate on: Stryker JSON, go-gremlins --output JSON, or the generic {\"mutants\":[...]} format")
 	dir := fs.String("dir", "", "relativize absolute paths in the report to this directory")
+	lang := fs.String("lang", "", "source language, required with --minimum-graded and --only-files")
 	failBelow := fs.Float64("fail-below", 60, "mutation score (percent) below which the gate fails")
 	coveredOnly := fs.Bool("covered-only", false, "leave never-executed mutants out of the score, so it measures assertion strength only (line coverage is crap-metric's job)")
-	minMutants := fs.Int("min-mutants", 0, "below this many graded mutants the score is too noisy to gate on: pass with a note instead of failing (0 = always enforce)")
+	minMutants := fs.Int("min-mutants", 0, "legacy waiver: pass when fewer than this many mutants are graded")
+	minimumGraded := fs.Int("minimum-graded", 0, "fail when fewer than this many mutants are graded (0 disables the evidence floor)")
 	top := fs.Int("top", 20, "number of surviving mutants to print (0 = all)")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list — ratchets the gate to mutants in these files; omit to score the whole report")
 	jsonOut := fs.String("json", "mutation-report.json", "path to write the full JSON report")
@@ -197,6 +206,10 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 
 	if *reportPath == "" {
 		fmt.Fprintln(stderr, "test-metric: --report is required")
+		return 2
+	}
+	if *minimumGraded > 0 && *onlyFilesPath != "" && (*lang == "" || *dir == "") {
+		fmt.Fprintln(stderr, "test-metric: --lang and --dir are required for ratcheted --minimum-graded")
 		return 2
 	}
 	onlyFiles, ok := ratchet.Load(*onlyFilesPath, "test-metric", stderr)
@@ -214,7 +227,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	report := mutation.NewReport(mutants, *failBelow, *coveredOnly).WithMinMutants(*minMutants)
+	report := mutation.NewReport(mutants, *failBelow, *coveredOnly).WithMinMutants(*minMutants).WithMinimumGraded(*minimumGraded)
 	report.WriteTable(stdout, *top)
 
 	if *jsonOut != "" {
@@ -227,8 +240,19 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scoped := mutation.NewReport(filterMutants(mutants, onlyFiles), *failBelow, *coveredOnly).WithMinMutants(*minMutants)
+	scopedMutants := filterMutants(mutants, onlyFiles)
+	scoped, scopeEvidence, err := scopedMutationReport(scopedMutants, mutationScopeOptions{Dir: *dir, Lang: *lang, Changed: onlyFiles, FailBelow: *failBelow, CoveredOnly: *coveredOnly, MinMutants: *minMutants, MinimumGraded: *minimumGraded})
+	if err != nil {
+		fmt.Fprintln(stderr, "test-metric: analysis evidence:", err)
+		return 2
+	}
 	fmt.Fprintf(stdout, "\nratchet scope: %d mutant(s) in changed files, %.1f%% score\n", len(scoped.Mutants), scoped.Score)
+	if scopeEvidence != nil {
+		scopeEvidence.WriteText(stdout)
+	}
+	if scoped.InsufficientEvidence && (scopeEvidence == nil || scopeEvidence.Passed) {
+		fmt.Fprintf(stdout, "FAIL: insufficient analysis: %d graded mutants, need at least %d\n", scoped.Graded, scoped.MinimumGraded)
+	}
 	verdict := "PASS"
 	if !scoped.Passed {
 		verdict = "FAIL"

@@ -11,8 +11,9 @@ import (
 
 // Report is a full escape-hatch scan.
 type Report struct {
-	Hatches    []Hatch `json:"hatches"`
-	TotalLines int     `json:"total_lines"`
+	Analysis   *reportio.Analysis `json:"analysis,omitempty"`
+	Hatches    []Hatch            `json:"hatches"`
+	TotalLines int                `json:"total_lines"`
 	// Rate is hatches per 1000 lines analyzed — normalized so a bigger
 	// repo isn't unfairly penalized just for having more raw lines.
 	Rate      float64 `json:"rate_per_1000_lines"`

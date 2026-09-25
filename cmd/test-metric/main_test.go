@@ -245,6 +245,36 @@ func TestMutationMinMutants(t *testing.T) {
 	}
 }
 
+func TestMutationMinimumGradedAndDocsOnlyRatchet(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "calc.go"), []byte("package calc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := filepath.Join(dir, "empty.json")
+	if err := os.WriteFile(report, []byte(`{"mutants":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := exec("mutation", "--report", report, "--minimum-graded", "1", "--json", "")
+	if code != 1 || !strings.Contains(out, "insufficient analysis") {
+		t.Fatalf("full: code=%d out=%s", code, out)
+	}
+	changed := filepath.Join(dir, "changed.txt")
+	if err := os.WriteFile(changed, []byte("README.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = exec("mutation", "--report", report, "--minimum-graded", "1", "--lang", "go", "--dir", dir, "--only-files", changed, "--json", "")
+	if code != 0 || !strings.Contains(out, "not applicable") {
+		t.Fatalf("docs: code=%d out=%s", code, out)
+	}
+	if err := os.WriteFile(changed, []byte("calc.go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = exec("mutation", "--report", report, "--minimum-graded", "1", "--lang", "go", "--dir", dir, "--only-files", changed, "--json", "")
+	if code != 1 || !strings.Contains(out, "missing: calc.go") {
+		t.Fatalf("source: code=%d out=%s", code, out)
+	}
+}
+
 func TestMutationRatchetScopesTheGateNotTheReport(t *testing.T) {
 	report := "../../testdata/test/mutation/gremlins.json"
 	dir := t.TempDir()

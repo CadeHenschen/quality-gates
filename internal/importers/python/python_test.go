@@ -95,7 +95,7 @@ func FuzzResolveFileImports(f *testing.F) {
 		dir := t.TempDir()
 		writeFile(t, dir, "a.py", source)
 		writeFile(t, dir, "b.py", "pass\n")
-		_, err := resolveFileImports(dir, "a.py", map[string]bool{"a.py": true, "b.py": true})
+		_, _, err := resolveWithIssues(dir, "a.py", map[string]bool{"a.py": true, "b.py": true})
 		if err != nil {
 			t.Fatalf("resolveFileImports returned an unexpected filesystem error: %v", err)
 		}

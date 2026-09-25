@@ -98,22 +98,47 @@ needs from the caller (git installed before checkout, `fetch-depth: 0`).
 ## Usage
 
 ```
-crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
+crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--verbose] [--require-analysis] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
 crap-metric   diff  --old PATH --new PATH [--top N] [--json]
-dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--only-files PATH] [--json PATH]
-escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--only-files PATH] [--json PATH]
-cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
-arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--only-files PATH] [--json PATH]
-arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--only-files PATH] [--json PATH]
+dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--require-analysis] [--only-files PATH] [--json PATH]
+escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--require-analysis] [--only-files PATH] [--json PATH]
+cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
+arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
+arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
 arch-metric   diff  --old PATH --new PATH [--top N] [--json]
-test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--only-files PATH] [--json PATH]
-test-metric   mutation --report PATH [--dir <dir>] [--fail-below PCT] [--covered-only] [--min-mutants N] [--only-files PATH] [--json PATH]
+test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--require-analysis] [--only-files PATH] [--json PATH]
+test-metric   mutation --report PATH [--dir <dir>] [--lang <go|python|ts|swift>] [--fail-below PCT] [--covered-only] [--min-mutants N] [--minimum-graded N] [--only-files PATH] [--json PATH]
 <any tool>    version
 ```
 
 Every `check` also takes `--top N` (rows to print, default 20, `0` = all).
 `version` prints the build's short commit SHA (`dev` for a plain
 `go build`/`go run`, since it's baked in via `-ldflags` — see Status).
+
+### Requiring analysis evidence
+
+The source-scanning `check` commands and `arch-metric stability` accept
+`--require-analysis`. It is opt-in for direct CLI users. With no
+`--only-files`, it fails when the requested language has no eligible files
+under `--dir`, or when an eligible file was not visited by the scanner.
+`test-metric check` requires test files to contain discovered tests. A file
+with no functions can still count as visited by `crap-metric`.
+
+With `--only-files`, eligibility is restricted to changed files under
+`--dir`. A documentation-only change has no eligible files and passes as
+not applicable; an eligible changed file missed by the analyzer fails.
+The changed-file list is matched against exact repo-root-relative paths
+when `--dir` is inside a Git checkout. Outside a Git checkout it is
+interpreted relative to `--dir`. Reports keep the full unfiltered findings
+and add an `analysis` object with required, analyzed, and missing counts.
+The scoped verdict is printed separately, as with the existing ratchet.
+
+`cycle-metric` and `arch-metric` also report unresolved relative local
+imports as `unresolved_imports`; strict analysis fails when one is in
+scope. Bare package imports are external. TypeScript path aliases are not
+resolved yet and remain outside this check. Python `from . import name`
+can name either a module or a symbol, so an unresolved name in that form
+is not treated as a missing module.
 
 ### crap-metric: per-language coverage input
 
@@ -472,6 +497,17 @@ table lists surviving mutants (`file:line`, mutator). `--dir` relativizes
 absolute paths in the report, and `--only-files` re-scores just the
 touched files' mutants — the practical way to run this in PR CI, since a
 full mutation run is slow but a per-changed-file one isn't.
+
+`--minimum-graded N` is the strict evidence floor: fewer than `N` graded
+mutants fails even if the score would otherwise be 100%. The default is
+`0` for direct CLI compatibility; use `--minimum-graded 1` when CI requires
+a mutation result. This differs from the older `--min-mutants` waiver,
+which passes a small sample. When both are set, the strict floor wins.
+With `--only-files` and a strict floor, pass `--dir` and `--lang` so the
+tool can identify eligible changed source files. A docs-only change is
+not applicable; a changed source file with no mutants is insufficient
+analysis. The scoped evidence is printed separately, while JSON remains
+the full report.
 
 ### dead-metric: is there code nothing uses?
 

@@ -60,6 +60,13 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
+		if opts.Visited != nil {
+			rel, err := filepath.Rel(opts.Dir, path)
+			if err != nil {
+				return err
+			}
+			*opts.Visited = append(*opts.Visited, filepath.ToSlash(rel))
+		}
 		out = append(out, fns...)
 		return nil
 	})

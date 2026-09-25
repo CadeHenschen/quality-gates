@@ -66,13 +66,11 @@ func Scan(opts Options) (Result, error) {
 		}
 		result.Hatches = append(result.Hatches, fileHatches...)
 		result.TotalLines += lines
-		if lines > 0 {
-			rel, relErr := filepath.Rel(opts.Dir, path)
-			if relErr != nil {
-				rel = path
-			}
-			result.LinesByFile[rel] = lines
+		rel, relErr := filepath.Rel(opts.Dir, path)
+		if relErr != nil {
+			rel = path
 		}
+		result.LinesByFile[rel] = lines
 		return nil
 	})
 	if err != nil {

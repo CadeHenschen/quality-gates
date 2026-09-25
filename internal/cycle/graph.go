@@ -15,6 +15,14 @@ import "sort"
 // not represented here at all).
 type Graph struct {
 	Edges map[string][]string
+	// Unresolved contains relative local imports for which no scanned file
+	// could be found. External package imports are not included.
+	Unresolved []ImportIssue
+}
+
+type ImportIssue struct {
+	File      string `json:"file"`
+	Specifier string `json:"specifier"`
 }
 
 // Cycle is one import cycle: Files is the full strongly-connected set

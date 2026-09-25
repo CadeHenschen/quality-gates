@@ -2,7 +2,10 @@
 // CRAP(m) = complexity(m)^2 * (1 - coverage(m))^3 + complexity(m)
 package crap
 
-import "sort"
+import (
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
+	"sort"
+)
 
 // Function is the normalized shape every language analyzer produces one of
 // per function/method it finds.
@@ -119,8 +122,9 @@ type Scored struct {
 // Report is a scored, sorted set of functions plus the gate that produced
 // the pass/fail verdict.
 type Report struct {
-	Functions []Scored `json:"functions"`
-	FailAbove float64  `json:"fail_above"`
+	Analysis  *reportio.Analysis `json:"analysis,omitempty"`
+	Functions []Scored           `json:"functions"`
+	FailAbove float64            `json:"fail_above"`
 
 	// SizeThresholds and SizeFindings are set by WithSize; both stay zero
 	// on a Report nobody ever applied a size gate to, so JSON output and

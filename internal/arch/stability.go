@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"git.roost-r.com/cadeh/quality-gates/internal/cycle"
 	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
@@ -120,10 +121,12 @@ func CheckStability(edges []Edge) []StabilityViolation {
 
 // StabilityReport is a full stable-dependencies analysis.
 type StabilityReport struct {
-	Violations    []StabilityViolation `json:"violations"`
-	FilesAnalyzed int                  `json:"files_analyzed"`
-	FailAbove     int                  `json:"fail_above"`
-	Passed        bool                 `json:"passed"`
+	Analysis          *reportio.Analysis   `json:"analysis,omitempty"`
+	UnresolvedImports []cycle.ImportIssue  `json:"unresolved_imports,omitempty"`
+	Violations        []StabilityViolation `json:"violations"`
+	FilesAnalyzed     int                  `json:"files_analyzed"`
+	FailAbove         int                  `json:"fail_above"`
+	Passed            bool                 `json:"passed"`
 }
 
 // ReadStabilityReport reads a report previously written by WriteJSON.

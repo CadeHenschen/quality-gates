@@ -10,9 +10,10 @@ import (
 
 // Report is a full test-quality scan.
 type Report struct {
-	Findings   []Finding `json:"findings"`
-	Tests      int       `json:"tests"`
-	Assertions int       `json:"assertions"`
+	Analysis   *reportio.Analysis `json:"analysis,omitempty"`
+	Findings   []Finding          `json:"findings"`
+	Tests      int                `json:"tests"`
+	Assertions int                `json:"assertions"`
 	// FailAbove is the finding count above which the gate fails (0 = any
 	// finding fails).
 	FailAbove int  `json:"fail_above"`

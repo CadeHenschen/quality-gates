@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"git.roost-r.com/cadeh/quality-gates/internal/cycle"
 	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 )
 
@@ -61,10 +62,12 @@ func (rs RuleSet) Check(edges []Edge) []Violation {
 
 // Report is a full layer-rule analysis.
 type Report struct {
-	Violations    []Violation `json:"violations"`
-	FilesAnalyzed int         `json:"files_analyzed"`
-	FailAbove     int         `json:"fail_above"`
-	Passed        bool        `json:"passed"`
+	Analysis          *reportio.Analysis  `json:"analysis,omitempty"`
+	UnresolvedImports []cycle.ImportIssue `json:"unresolved_imports,omitempty"`
+	Violations        []Violation         `json:"violations"`
+	FilesAnalyzed     int                 `json:"files_analyzed"`
+	FailAbove         int                 `json:"fail_above"`
+	Passed            bool                `json:"passed"`
 }
 
 // NewReport builds a Report and applies the fail-above gate (a raw

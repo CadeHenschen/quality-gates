@@ -7,7 +7,9 @@
 // gate is the more honest shape than a bolted-on subcommand.
 package dupe
 
-import "git.roost-r.com/cadeh/quality-gates/internal/reportio"
+import (
+	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
+)
 
 // Token is one lexical token from a source file, as produced by a language
 // tokenizer. Text is used for exact matching, so a tokenizer that wants
@@ -39,12 +41,13 @@ type Clone struct {
 
 // Report is a full duplication analysis.
 type Report struct {
-	Clones             []Clone `json:"clones"`
-	TotalLines         int     `json:"total_lines"`
-	DuplicatedLines    int     `json:"duplicated_lines"`
-	DuplicationPercent float64 `json:"duplication_percent"`
-	FailAbove          float64 `json:"fail_above"`
-	Passed             bool    `json:"passed"`
+	Analysis           *reportio.Analysis `json:"analysis,omitempty"`
+	Clones             []Clone            `json:"clones"`
+	TotalLines         int                `json:"total_lines"`
+	DuplicatedLines    int                `json:"duplicated_lines"`
+	DuplicationPercent float64            `json:"duplication_percent"`
+	FailAbove          float64            `json:"fail_above"`
+	Passed             bool               `json:"passed"`
 }
 
 // NewReport builds a Report from a set of files and the clones found in

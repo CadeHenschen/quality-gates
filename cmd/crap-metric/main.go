@@ -20,7 +20,7 @@ import (
 )
 
 const usage = `usage:
-  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--top N] [--verbose] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
+  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--top N] [--verbose] [--require-analysis] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
   crap-metric diff --old PATH --new PATH [--top N] [--json]
   crap-metric version`
 
@@ -68,6 +68,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	maxNesting := fs.Int("max-nesting", 5, "control-flow nesting depth above which the gate fails; <=0 disables")
 	maxFileLines := fs.Int("max-file-lines", 600, "file length (lines) above which the gate fails; <=0 disables")
 	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to only functions in these files, so pre-existing hotspots elsewhere don't block; omit to check the whole --dir as before")
+	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not analyzed")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "glob of --dir-relative files to drop from analysis entirely (repeatable; e.g. 'internal/gen/**', '**/*_pb.go'). Unlike --only-files this removes files from the report too")
 	excludeFile := fs.String("exclude-file", "", "file of exclude globs, one per line, '#' comments (default: "+exclude.DefaultFile+" in --dir, if present; commit it to keep exclusions reviewable)")
@@ -81,21 +82,9 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	analyzer, err := analyzerFor(*lang)
-	if err != nil {
-		fmt.Fprintln(stderr, "crap-metric:", err)
-		return 2
-	}
-
-	fns, err := analyzer.Analyze(analyzers.Options{Dir: *dir, CoveragePath: *coverage})
+	fns, analyzedFiles, excluded, err := collectFunctions(*lang, *dir, *coverage, *excludeFile, excludes, stdout)
 	if err != nil {
 		fmt.Fprintln(stderr, "crap-metric: analyze:", err)
-		return 2
-	}
-
-	fns, err = applyExcludes(*dir, *excludeFile, excludes, fns, stdout)
-	if err != nil {
-		fmt.Fprintln(stderr, "crap-metric:", err)
 		return 2
 	}
 
@@ -107,7 +96,17 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	// printed and written to --json — --only-files narrows the *gate*
 	// only, so nothing is hidden, just not blocking.
 	report := crap.NewReport(fns, *failAbove).WithSize(sizeThresholds)
+	if *requireAnalysis {
+		report, err = withCrapEvidence(report, *dir, *lang, analyzedFiles, excluded, nil)
+		if err != nil {
+			fmt.Fprintln(stderr, "crap-metric: analysis evidence:", err)
+			return 2
+		}
+	}
 	report.WriteTable(stdout, *top, *verbose)
+	if report.Analysis != nil {
+		report.Analysis.WriteText(stdout)
+	}
 
 	if *jsonOut != "" {
 		if err := writeJSONReport(report, *jsonOut); err != nil {
@@ -121,12 +120,15 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	}
 
 	scoped := crap.NewReport(filterFunctions(fns, onlyFiles), *failAbove).WithSize(sizeThresholds)
-	fmt.Fprintf(stdout, "\nratchet scope: %d function(s) in changed files\n", len(scoped.Functions))
-	if scoped.Passed {
-		fmt.Fprintf(stdout, "PASS (ratcheted): no changed function exceeds CRAP %.1f or a size threshold\n", *failAbove)
-	} else {
-		fmt.Fprintf(stdout, "FAIL (ratcheted): at least one changed function exceeds CRAP %.1f or a size threshold\n", *failAbove)
+	if *requireAnalysis {
+		scoped, err = withCrapEvidence(scoped, *dir, *lang, analyzedFiles, excluded, onlyFiles)
+		if err != nil {
+			fmt.Fprintln(stderr, "crap-metric: analysis evidence:", err)
+			return 2
+		}
+		scoped.Analysis.WriteText(stdout)
 	}
+	writeCrapRatchet(stdout, scoped, *failAbove)
 	return scoped.ExitCode()
 }
 

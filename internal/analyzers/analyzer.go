@@ -14,6 +14,9 @@ type Options struct {
 	// (coverage.json for Python, a go cover profile for Go,
 	// coverage-final.json for TS/JS).
 	CoveragePath string
+	// Visited, when provided, receives paths of source files inspected by
+	// the analyzer, including files with no functions to score.
+	Visited *[]string
 }
 
 // Analyzer produces normalized function-level complexity and coverage data

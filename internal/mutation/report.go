@@ -31,8 +31,11 @@ type Report struct {
 	// MinMutants and Insufficient record the --min-mutants waiver: with
 	// fewer than MinMutants graded, the score is noise (one survivor among
 	// three is 67%) and the gate passes rather than fail on chance.
-	MinMutants   int  `json:"min_mutants,omitempty"`
-	Insufficient bool `json:"insufficient,omitempty"`
+	MinMutants           int                `json:"min_mutants,omitempty"`
+	Insufficient         bool               `json:"insufficient,omitempty"`
+	MinimumGraded        int                `json:"minimum_graded,omitempty"`
+	InsufficientEvidence bool               `json:"insufficient_evidence,omitempty"`
+	Analysis             *reportio.Analysis `json:"analysis,omitempty"`
 }
 
 // NewReport tallies mutants and applies the fail-below gate (a percentage).
@@ -77,6 +80,27 @@ func (r Report) WithMinMutants(n int) Report {
 	return r
 }
 
+// WithMinimumGraded requires enough scored mutants to make a score
+// meaningful. Unlike the legacy --min-mutants waiver, this fails closed.
+func (r Report) WithMinimumGraded(n int) Report {
+	r.MinimumGraded = n
+	if n > 0 && r.Graded < n {
+		r.InsufficientEvidence = true
+		r.Passed = false
+	}
+	return r
+}
+
+// WithEvidence attaches per-file analysis evidence to a ratcheted score.
+func (r Report) WithEvidence(analysis reportio.Analysis) Report {
+	r.Analysis = &analysis
+	if !analysis.Passed {
+		r.Passed = false
+		r.InsufficientEvidence = true
+	}
+	return r
+}
+
 // ExitCode maps a Report's verdict to a process exit code.
 func (r Report) ExitCode() int { return reportio.ExitCode(r.Passed) }
 
@@ -117,7 +141,11 @@ func (r Report) WriteTable(w io.Writer, top int) {
 		fmt.Fprintln(w)
 	}
 
-	if r.Insufficient {
+	if r.Analysis != nil && !r.Analysis.Passed {
+		fmt.Fprintf(w, "FAIL: %s (%v)\n", r.Analysis.Reason, r.Analysis.Missing)
+	} else if r.InsufficientEvidence {
+		fmt.Fprintf(w, "FAIL: insufficient analysis: %d graded mutants, need at least %d\n", r.Graded, r.MinimumGraded)
+	} else if r.Insufficient {
 		fmt.Fprintf(w, "PASS: only %d graded mutants (fewer than --min-mutants %d), so the %.1f%% score is not enforced\n", r.Graded, r.MinMutants, r.Score)
 	} else if r.Passed {
 		fmt.Fprintf(w, "PASS: %.1f%% is at or above %.1f%%\n", r.Score, r.FailBelow)

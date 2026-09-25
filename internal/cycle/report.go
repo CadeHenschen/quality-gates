@@ -10,10 +10,12 @@ import (
 
 // Report is a full cycle analysis.
 type Report struct {
-	Cycles        []Cycle `json:"cycles"`
-	FilesAnalyzed int     `json:"files_analyzed"`
-	FailAbove     int     `json:"fail_above"`
-	Passed        bool    `json:"passed"`
+	Analysis          *reportio.Analysis `json:"analysis,omitempty"`
+	UnresolvedImports []ImportIssue      `json:"unresolved_imports,omitempty"`
+	Cycles            []Cycle            `json:"cycles"`
+	FilesAnalyzed     int                `json:"files_analyzed"`
+	FailAbove         int                `json:"fail_above"`
+	Passed            bool               `json:"passed"`
 }
 
 // NewReport builds a Report and applies the fail-above gate (a raw cycle
