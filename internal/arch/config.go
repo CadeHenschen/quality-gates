@@ -3,7 +3,8 @@ package arch
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 // DefaultRulesFile is the conventional, committable rules file arch-metric
@@ -30,7 +31,7 @@ type config struct {
 //
 // exceptions is optional; a file with none returns a nil slice.
 func LoadRules(path string) (rules []Rule, exceptions []Exception, err error) {
-	data, err := os.ReadFile(path)
+	data, err := safefile.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}

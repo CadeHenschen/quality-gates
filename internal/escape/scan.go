@@ -2,10 +2,14 @@ package escape
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 // Hatch is one matched escape-hatch occurrence.
@@ -36,15 +40,22 @@ type Result struct {
 // Scan walks Dir for Lang's source files (skipping vendor/node_modules/
 // testdata/dotdirs and that language's test-file convention) and matches
 // every line against that language's patterns.
-func Scan(opts Options) (Result, error) {
+func Scan(opts Options) (result Result, retErr error) {
 	lp, ok := Resolve(opts.Lang)
 	if !ok {
 		return Result{}, fmt.Errorf("unknown --lang %q", opts.Lang)
 	}
 
-	result := Result{LinesByFile: map[string]int{}}
+	result = Result{LinesByFile: map[string]int{}}
+	root, err := safefile.OpenRoot(opts.Dir)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() {
+		retErr = errors.Join(retErr, root.Close())
+	}()
 
-	err := filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -60,16 +71,16 @@ func Scan(opts Options) (Result, error) {
 			return nil
 		}
 
-		fileHatches, lines, err := scanFile(path, opts.Dir, lp.Patterns)
+		rel, relErr := filepath.Rel(opts.Dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		fileHatches, lines, err := scanFile(root, filepath.ToSlash(rel), rel, lp.Patterns)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		result.Hatches = append(result.Hatches, fileHatches...)
 		result.TotalLines += lines
-		rel, relErr := filepath.Rel(opts.Dir, path)
-		if relErr != nil {
-			rel = path
-		}
 		result.LinesByFile[rel] = lines
 		return nil
 	})
@@ -79,27 +90,15 @@ func Scan(opts Options) (Result, error) {
 	return result, nil
 }
 
-func scanFile(path, dir string, patterns []Pattern) ([]Hatch, int, error) {
-	f, err := os.Open(path)
+func scanFile(root *os.Root, openPath, reportPath string, patterns []Pattern) ([]Hatch, int, error) {
+	src, err := safefile.ReadFileAt(root, openPath)
 	if err != nil {
 		return nil, 0, err
-	}
-	defer f.Close()
-
-	// Relative to dir, not the raw walked path — so e.g. `--dir
-	// ../../src` reports "foo.go", not "../../src/foo.go" (which would
-	// also break --only-files matching, whose changed-file list is
-	// relative to the repo root, not to wherever --dir's own ".."
-	// components happen to point). See crap-metric/dupe-metric's own
-	// history for this exact bug.
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		rel = path
 	}
 
 	var hatches []Hatch
 	lineNo := 0
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(src))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		lineNo++
@@ -107,7 +106,7 @@ func scanFile(path, dir string, patterns []Pattern) ([]Hatch, int, error) {
 		for _, p := range patterns {
 			if p.Regex.MatchString(line) {
 				hatches = append(hatches, Hatch{
-					File:    rel,
+					File:    reportPath,
 					Line:    lineNo,
 					Pattern: p.Name,
 					Text:    strings.TrimSpace(line),

@@ -46,11 +46,11 @@ def tokenize_file(path):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: tokenize_files.py <dir>", file=sys.stderr)
+    if len(sys.argv) != 1:
+        print("usage: tokenize_files.py", file=sys.stderr)
         sys.exit(2)
 
-    root = sys.argv[1]
+    root = os.getcwd()
     out = []
     for path in walk(root):
         tokens = tokenize_file(path)

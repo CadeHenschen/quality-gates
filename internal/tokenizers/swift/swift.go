@@ -4,21 +4,27 @@
 package swift
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/dupe"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 	"git.roost-r.com/cadeh/quality-gates/internal/swiftlex"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers"
 )
 
 type Tokenizer struct{}
 
-func (Tokenizer) Tokenize(opts tokenizers.Options) ([]dupe.FileTokens, error) {
-	var out []dupe.FileTokens
-	err := filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
+func (Tokenizer) Tokenize(opts tokenizers.Options) (out []dupe.FileTokens, retErr error) {
+	root, err := safefile.OpenRoot(opts.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
+	err = filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -34,7 +40,11 @@ func (Tokenizer) Tokenize(opts tokenizers.Options) ([]dupe.FileTokens, error) {
 			return nil
 		}
 
-		ft, err := tokenizeFile(path, opts.Dir)
+		rel, err := filepath.Rel(opts.Dir, path)
+		if err != nil {
+			return err
+		}
+		ft, err := tokenizeFile(root, filepath.ToSlash(rel), rel)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -51,8 +61,8 @@ func isTestFile(name string) bool {
 	return strings.HasSuffix(name, "Tests.swift") || strings.HasSuffix(name, "Test.swift")
 }
 
-func tokenizeFile(path, dir string) (dupe.FileTokens, error) {
-	src, err := os.ReadFile(path)
+func tokenizeFile(root *os.Root, openPath, reportPath string) (dupe.FileTokens, error) {
+	src, err := safefile.ReadFileAt(root, openPath)
 	if err != nil {
 		return dupe.FileTokens{}, err
 	}
@@ -65,9 +75,5 @@ func tokenizeFile(path, dir string) (dupe.FileTokens, error) {
 		toks = append(toks, dupe.Token{Text: t.Text, Line: t.Line})
 	}
 
-	rel, err := filepath.Rel(dir, path)
-	if err != nil {
-		rel = path
-	}
-	return dupe.FileTokens{File: rel, Tokens: toks}, nil
+	return dupe.FileTokens{File: reportPath, Tokens: toks}, nil
 }

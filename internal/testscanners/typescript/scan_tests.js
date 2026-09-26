@@ -10,11 +10,7 @@
 const path = require('path');
 const fs = require('fs');
 
-const dir = process.argv[2];
-if (!dir) {
-  console.error('usage: scan_tests.js <dir>');
-  process.exit(2);
-}
+const dir = process.cwd();
 
 function resolveClassicTs(pkg) {
   try {

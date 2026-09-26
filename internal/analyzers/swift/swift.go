@@ -30,6 +30,7 @@
 package swift
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,12 +39,13 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 	"git.roost-r.com/cadeh/quality-gates/internal/swiftlex"
 )
 
 type Analyzer struct{}
 
-func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
+func (Analyzer) Analyze(opts analyzers.Options) (out []crap.Function, retErr error) {
 	var cov lcovData
 	if opts.CoveragePath != "" {
 		var err error
@@ -53,8 +55,12 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		}
 	}
 
-	var out []crap.Function
-	err := filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
+	root, err := safefile.OpenRoot(opts.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
+	err = filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -70,7 +76,11 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			return nil
 		}
 
-		fns, err := analyzeFile(path, opts.Dir, cov, opts.CoveragePath != "")
+		rel, err := filepath.Rel(opts.Dir, path)
+		if err != nil {
+			return err
+		}
+		fns, err := analyzeFile(root, filepath.ToSlash(rel), path, opts.Dir, cov, opts.CoveragePath != "")
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -94,8 +104,8 @@ func isTestFile(name string) bool {
 	return strings.HasSuffix(name, "Tests.swift") || strings.HasSuffix(name, "Test.swift")
 }
 
-func analyzeFile(path, dir string, cov lcovData, haveCoverage bool) ([]crap.Function, error) {
-	src, err := os.ReadFile(path)
+func analyzeFile(root *os.Root, openPath, path, dir string, cov lcovData, haveCoverage bool) ([]crap.Function, error) {
+	src, err := safefile.ReadFileAt(root, openPath)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +189,7 @@ type lcovData struct {
 // multi-target build reporting the same source more than once); a line
 // counts as hit if ANY section reports a nonzero count for it.
 func parseLCOV(path string) (lcovData, error) {
-	data, err := os.ReadFile(path)
+	data, err := safefile.ReadFile(path)
 	if err != nil {
 		return lcovData{}, err
 	}

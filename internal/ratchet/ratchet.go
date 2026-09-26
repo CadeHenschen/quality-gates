@@ -13,16 +13,17 @@ package ratchet
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 // LoadFiles reads a newline-separated list of file paths (as produced by
 // `git diff --name-only`, relative to the repo root) into a set for
 // matching via Matches.
 func LoadFiles(path string) (map[string]bool, error) {
-	data, err := os.ReadFile(path)
+	data, err := safefile.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

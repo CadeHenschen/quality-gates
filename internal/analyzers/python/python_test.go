@@ -74,7 +74,7 @@ func TestAnalyzeComplexityAndCoverage(t *testing.T) {
 		linesTotal, linesCov int
 		uncovered            []crap.LineRange
 	}{
-		{"simple", 1, 1, 1, nil},                                     // line 5, executed
+		{"simple", 1, 1, 1, nil}, // line 5, executed
 		{"branchy", 2, 3, 2, []crap.LineRange{{Start: 11, End: 11}}}, // lines 9,10,11 measured; 11 missing
 		{"loopy", 3, 5, 3, []crap.LineRange{{Start: 19, End: 20}}},   // lines 16-20 measured; 19,20 missing
 	}

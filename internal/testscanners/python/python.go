@@ -22,7 +22,7 @@ func (Scanner) Scan(dir string) ([]testmetric.Test, error) {
 		return nil, err
 	}
 	var tests []testmetric.Test
-	if err := embedscript.Run("python3", script, ".py", absDir, &tests); err != nil {
+	if err := embedscript.Run("python3", script, absDir, &tests); err != nil {
 		return nil, err
 	}
 	for i := range tests {

@@ -104,6 +104,22 @@ jobs:
       - name: golangci-lint
         run: golangci-lint run ./...
 
+  # No `needs:` — runs in parallel with `test`/`lint`, same reasoning as
+  # `lint` above. Security-focused (gosec + govulncheck), distinct from
+  # golangci-lint's style/correctness rules in `lint`.
+  static-analysis:
+    name: Static analysis (security)
+    runs-on: [self-hosted, roost-r]
+    container:
+      image: golang:1.26-alpine
+    steps:
+      - name: Install Node (required by actions/checkout)
+        run: apk add --no-cache nodejs
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      - uses: http://forgejo:3000/cadeh/ci-workflows/actions/go-static-analysis@add-static-analysis
+
   lint-workflows:
     name: Lint workflow files
     runs-on: [self-hosted, roost-r]
@@ -123,7 +139,7 @@ jobs:
   release:
     name: Release binaries
     runs-on: [self-hosted, roost-r]
-    needs: [test, lint, lint-workflows]
+    needs: [test, lint, static-analysis, lint-workflows]
     if: github.ref == 'refs/heads/main'
     container:
       image: golang:1.26-alpine
@@ -313,7 +329,7 @@ jobs:
         run: ./dupe-metric check --lang go --dir . --fail-above 18
 
       - name: escape-metric check (self)
-        run: ./escape-metric check --lang go --dir . --fail-above 1
+        run: ./escape-metric check --lang go --dir . --fail-above 1 --forbid-pattern nosec
 
       # Gated by this repo's own .arch-metric-rules.json at the module
       # root (cmd binaries stay independent; internal packages never
@@ -436,7 +452,7 @@ jobs:
         run: dupe-metric check --lang go --dir . --fail-above 18
 
       - name: escape-metric check (self)
-        run: escape-metric check --lang go --dir . --fail-above 1
+        run: escape-metric check --lang go --dir . --fail-above 1 --forbid-pattern nosec
 
       # `go run`, not the installed binary: ci-workflows'
       # install-quality-gates doesn't fetch arch-metric yet either, and

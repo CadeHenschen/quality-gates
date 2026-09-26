@@ -16,7 +16,7 @@ the incidents that motivated it.
 |---|---|---|---|
 | `crap-metric` | Is this function complex *and* undertested?<br>Is it also too big to read? | Parses each language for cyclomatic complexity + coverage, combines via `complexity² × (1−coverage)³ + complexity`; the same parse also gates on size/shape (length, params, nesting, file length) | `--fail-above 30`; `--max-lines 80 --max-params 6 --max-nesting 5 --max-file-lines 600` |
 | `dupe-metric` | Is this code duplicated? | Tokenizes source, finds exact-match blocks via greedy leftmost-longest shingling | `--fail-above 5` (%) |
-| `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines) |
+| `escape-metric` | Did this code opt out of type-checking/linting/error handling? | Regex-matches suppression comments and a few high-confidence whole-line patterns | `--fail-above 1` (per 1000 lines); `--forbid-pattern nosec` can ban a specific hatch regardless of rate |
 | `cycle-metric` | Are these modules structurally tangled? | Regex-extracts imports, resolves to files, runs Tarjan's SCC | `--fail-above 0` (cycles) |
 | `arch-metric` | Does this code violate a declared layer boundary? | `check`: resolves imports to packages, checks each edge against a small "X may not import Y" rules file. `stability`: gates on Martin's Stable Dependencies Principle from the same graph | `check --fail-above 0` (violations); `stability --fail-above 0` (violations) |
 | `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) / `periphery` (Swift) reports and gates on the count | `--fail-above 0` (dead symbols) |
@@ -101,7 +101,7 @@ needs from the caller (git installed before checkout, `fetch-depth: 0`).
 crap-metric   check --lang <python|go|ts|swift> --dir <dir> [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--verbose] [--require-analysis] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
 crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--require-analysis] [--only-files PATH] [--json PATH]
-escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--require-analysis] [--only-files PATH] [--json PATH]
+escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--forbid-pattern NAME]... [--require-analysis] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
 arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
 arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]

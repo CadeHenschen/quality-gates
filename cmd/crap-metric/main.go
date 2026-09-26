@@ -17,6 +17,7 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 	"git.roost-r.com/cadeh/quality-gates/internal/exclude"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 const usage = `usage:
@@ -171,7 +172,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 }
 
 func readReportFile(path string) (crap.Report, error) {
-	f, err := os.Open(path)
+	f, err := safefile.Open(path)
 	if err != nil {
 		return crap.Report{}, err
 	}
@@ -180,7 +181,7 @@ func readReportFile(path string) (crap.Report, error) {
 }
 
 func writeJSONReport(report crap.Report, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}

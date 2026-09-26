@@ -10,6 +10,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/dupe"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/golang"
 	"git.roost-r.com/cadeh/quality-gates/internal/tokenizers/python"
@@ -128,7 +129,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 }
 
 func writeJSONReport(report dupe.Report, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}

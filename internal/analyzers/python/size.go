@@ -2,6 +2,7 @@ package python
 
 import (
 	_ "embed"
+	"path/filepath"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/embedscript"
 )
@@ -25,18 +26,27 @@ type sizeKey struct {
 
 // sizeFacts runs size_facts.py over dir and indexes its output by (file,
 // lineno) — the function's "def" line, the same key radon's own Lineno
-// uses — so Analyze can look a radonEntry's size facts up directly. dir is
-// passed through unmodified, exactly like runRadon(dir), so both
-// subprocesses key their "file" strings the same way and a lookup by the
-// literal radon-reported path always hits.
+// uses — so Analyze can look a radonEntry's size facts up directly.
 func sizeFacts(dir string) (map[sizeKey]sizeFact, error) {
 	var facts []sizeFact
-	if err := embedscript.Run("python3", sizeScript, ".py", dir, &facts); err != nil {
+	if err := embedscript.Run("python3", sizeScript, dir, &facts); err != nil {
 		return nil, err
 	}
 	out := make(map[sizeKey]sizeFact, len(facts))
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range facts {
-		out[sizeKey{f.File, f.Lineno}] = f
+		absFile, err := filepath.Abs(f.File)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(absDir, absFile)
+		if err != nil {
+			return nil, err
+		}
+		out[sizeKey{filepath.Join(dir, rel), f.Lineno}] = f
 	}
 	return out, nil
 }

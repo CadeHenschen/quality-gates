@@ -13,6 +13,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/deadcode"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 const usage = `usage:
@@ -66,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "dead-metric: --ignore:", err)
 		return 2
 	}
-	data, err := os.ReadFile(*reportPath)
+	data, err := safefile.ReadFile(*reportPath)
 	if err != nil {
 		fmt.Fprintln(stderr, "dead-metric: reading --report:", err)
 		return 2
@@ -107,7 +108,7 @@ func loadIgnore(path string) (deadcode.Ignore, error) {
 	if path == "" {
 		return deadcode.Ignore{}, nil
 	}
-	f, err := os.Open(path)
+	f, err := safefile.Open(path)
 	if err != nil {
 		return deadcode.Ignore{}, err
 	}
@@ -127,7 +128,7 @@ func filterFindings(found []deadcode.Finding, onlyFiles map[string]bool) []deadc
 }
 
 func writeJSON(write func(io.Writer) error, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}

@@ -1,41 +1,36 @@
 // Package embedscript runs an embedded interpreter script against a
-// directory and parses its JSON stdout. Shared by the Python and
+// caller-selected working directory and parses its JSON stdout. Shared by Python and
 // TypeScript tokenizers (internal/tokenizers/{python,typescript}) and the
 // TypeScript complexity analyzer (internal/analyzers/typescript) — all
-// three independently did the identical "write embedded script content to
-// a temp file, run `interpreter tempfile dir`, unmarshal JSON stdout"
-// sequence until this package factored it out (the same class of gap
+// three independently implemented the same "run an embedded script and
+// unmarshal JSON stdout" sequence until this package factored it out (the same class of gap
 // dupe-metric's self-check caught in the tokenizers before — see
 // CLAUDE.md — just one dupe-metric's shingle matcher didn't itself catch,
 // since the two copies' surrounding code differed enough).
 package embedscript
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 )
 
-// Run writes scriptContent to a temp file (suffixed ext, so the interpreter
-// recognizes the file type), runs `interpreter <tempfile> dir`, and
-// unmarshals its JSON stdout into out.
-func Run(interpreter string, scriptContent []byte, ext, dir string, out any) error {
-	tmp, err := os.CreateTemp("", "quality-gates-script-*"+ext)
-	if err != nil {
-		return err
+// Run sends scriptContent to a fixed interpreter on stdin from dir and
+// unmarshals its JSON stdout into out. No caller-controlled value becomes
+// an executable name or command-line argument.
+func Run(interpreter string, scriptContent []byte, dir string, out any) error {
+	var cmd *exec.Cmd
+	switch interpreter {
+	case "node":
+		cmd = exec.Command("node")
+	case "python3":
+		cmd = exec.Command("python3")
+	default:
+		return fmt.Errorf("unsupported embedded-script interpreter %q", interpreter)
 	}
-	defer os.Remove(tmp.Name())
-
-	if _, err := tmp.Write(scriptContent); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-
-	cmd := exec.Command(interpreter, tmp.Name(), dir)
+	cmd.Dir = dir
+	cmd.Stdin = bytes.NewReader(scriptContent)
 	stdout, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

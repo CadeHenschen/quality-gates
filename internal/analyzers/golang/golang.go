@@ -6,6 +6,7 @@ package golang
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -20,11 +21,18 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 	"git.roost-r.com/cadeh/quality-gates/internal/gomod"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 type Analyzer struct{}
 
-func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
+type analysisContext struct {
+	modRoot, modPath string
+	blocks           []coverBlock
+	haveCoverage     bool
+}
+
+func (Analyzer) Analyze(opts analyzers.Options) (out []crap.Function, retErr error) {
 	modRoot, modPath, err := gomod.Find(opts.Dir)
 	if err != nil {
 		return nil, err
@@ -38,7 +46,11 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 		}
 	}
 
-	var out []crap.Function
+	root, err := safefile.OpenRoot(opts.Dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
 	err = filepath.WalkDir(opts.Dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -56,7 +68,12 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 			return nil
 		}
 
-		fns, err := analyzeFile(path, modRoot, modPath, blocks, opts.CoveragePath != "")
+		rel, err := filepath.Rel(opts.Dir, path)
+		if err != nil {
+			return err
+		}
+		ctx := analysisContext{modRoot: modRoot, modPath: modPath, blocks: blocks, haveCoverage: opts.CoveragePath != ""}
+		fns, err := analyzeFile(root, filepath.ToSlash(rel), path, ctx)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
@@ -76,24 +93,29 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 	return out, nil
 }
 
-func analyzeFile(path, modRoot, modPath string, blocks []coverBlock, haveCoverage bool) ([]crap.Function, error) {
+func analyzeFile(root *os.Root, openPath, path string, ctx analysisContext) ([]crap.Function, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	f, err := safefile.OpenAt(root, openPath)
 	if err != nil {
 		return nil, err
+	}
+	file, parseErr := parser.ParseFile(fset, path, f, parser.ParseComments)
+	closeErr := f.Close()
+	if parseErr != nil || closeErr != nil {
+		return nil, errors.Join(parseErr, closeErr)
 	}
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
-	rel, err := filepath.Rel(modRoot, absPath)
+	rel, err := filepath.Rel(ctx.modRoot, absPath)
 	if err != nil {
 		return nil, err
 	}
-	importPath := modPath + "/" + filepath.ToSlash(rel)
+	importPath := ctx.modPath + "/" + filepath.ToSlash(rel)
 
-	unmeasured := haveCoverage && !fileInProfile(blocks, importPath)
+	unmeasured := ctx.haveCoverage && !fileInProfile(ctx.blocks, importPath)
 	fileLines := fset.File(file.Pos()).LineCount()
 
 	var out []crap.Function
@@ -105,7 +127,7 @@ func analyzeFile(path, modRoot, modPath string, blocks []coverBlock, haveCoverag
 
 		start := fset.Position(fn.Pos()).Line
 		end := fset.Position(fn.End()).Line
-		total, covered, uncovered := coverageForRange(blocks, importPath, start, end)
+		total, covered, uncovered := coverageForRange(ctx.blocks, importPath, start, end)
 
 		out = append(out, crap.Function{
 			File:            rel,
@@ -173,7 +195,7 @@ type coverBlock struct {
 //
 // (file:startLine.startCol,endLine.endCol numStatements executionCount)
 func parseCoverProfile(path string) ([]coverBlock, error) {
-	f, err := os.Open(path)
+	f, err := safefile.Open(path)
 	if err != nil {
 		return nil, err
 	}

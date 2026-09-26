@@ -15,6 +15,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/mutation"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 	"git.roost-r.com/cadeh/quality-gates/internal/testmetric"
 	"git.roost-r.com/cadeh/quality-gates/internal/testscanners"
 	golangscan "git.roost-r.com/cadeh/quality-gates/internal/testscanners/golang"
@@ -262,7 +263,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 }
 
 func writeJSON(write func(io.Writer) error, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}

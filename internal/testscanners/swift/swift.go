@@ -13,7 +13,9 @@
 package swift
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,9 +55,17 @@ var skipDirs = map[string]bool{
 	"vendor": true, "node_modules": true, "testdata": true, "checkouts": true,
 }
 
-func (Scanner) Scan(dir string) ([]testmetric.Test, error) {
+func (Scanner) Scan(dir string) (out []testmetric.Test, scanErr error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		scanErr = errors.Join(scanErr, root.Close())
+	}()
+
 	var files []*fileFuncs
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -68,9 +78,21 @@ func (Scanner) Scan(dir string) ([]testmetric.Test, error) {
 		if !strings.HasSuffix(path, ".swift") {
 			return nil
 		}
-		src, err := os.ReadFile(path)
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return fmt.Errorf("relative path for %s: %w", path, err)
+		}
+		f, err := root.Open(rel)
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
+		}
+		src, readErr := io.ReadAll(f)
+		closeErr := f.Close()
+		if readErr != nil {
+			return fmt.Errorf("%s: %w", path, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("%s: %w", path, closeErr)
 		}
 		files = append(files, parseFile(path, src))
 		return nil
@@ -83,7 +105,6 @@ func (Scanner) Scan(dir string) ([]testmetric.Test, error) {
 	// so resolve them across all of them before grading any test.
 	helpers := assertingHelpers(files)
 
-	var out []testmetric.Test
 	for _, f := range files {
 		rel, err := filepath.Rel(dir, f.path)
 		if err != nil {

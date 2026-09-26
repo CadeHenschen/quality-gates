@@ -20,6 +20,7 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/python"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/typescript"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 const usage = `usage:
@@ -325,7 +326,7 @@ type jsonReport interface {
 }
 
 func writeJSONReport(report jsonReport, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}
@@ -375,7 +376,7 @@ func runDiff(args []string, stdout, stderr io.Writer) int {
 }
 
 func readReportFile(path string) (arch.Report, error) {
-	f, err := os.Open(path)
+	f, err := safefile.Open(path)
 	if err != nil {
 		return arch.Report{}, err
 	}
@@ -384,7 +385,7 @@ func readReportFile(path string) (arch.Report, error) {
 }
 
 func readStabilityReportFile(path string) (arch.StabilityReport, error) {
-	f, err := os.Open(path)
+	f, err := safefile.Open(path)
 	if err != nil {
 		return arch.StabilityReport{}, err
 	}

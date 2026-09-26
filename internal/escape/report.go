@@ -16,14 +16,15 @@ type Report struct {
 	TotalLines int                `json:"total_lines"`
 	// Rate is hatches per 1000 lines analyzed — normalized so a bigger
 	// repo isn't unfairly penalized just for having more raw lines.
-	Rate      float64 `json:"rate_per_1000_lines"`
-	FailAbove float64 `json:"fail_above"`
-	Passed    bool    `json:"passed"`
+	Rate              float64  `json:"rate_per_1000_lines"`
+	FailAbove         float64  `json:"fail_above"`
+	ForbiddenPatterns []string `json:"forbidden_patterns,omitempty"`
+	Passed            bool     `json:"passed"`
 }
 
 // NewReport builds a Report and applies the fail-above gate (a rate per
 // 1000 lines).
-func NewReport(hatches []Hatch, totalLines int, failAbove float64) Report {
+func NewReport(hatches []Hatch, totalLines int, failAbove float64, forbiddenPatterns ...string) Report {
 	sorted := append([]Hatch(nil), hatches...)
 	sort.Slice(sorted, func(i, j int) bool {
 		if sorted[i].File != sorted[j].File {
@@ -37,12 +38,27 @@ func NewReport(hatches []Hatch, totalLines int, failAbove float64) Report {
 		rate = float64(len(sorted)) / float64(totalLines) * 1000
 	}
 
+	forbiddenFound := make(map[string]bool, len(forbiddenPatterns))
+	for _, hatch := range sorted {
+		for _, pattern := range forbiddenPatterns {
+			if hatch.Pattern == pattern {
+				forbiddenFound[pattern] = true
+			}
+		}
+	}
+	forbidden := make([]string, 0, len(forbiddenFound))
+	for pattern := range forbiddenFound {
+		forbidden = append(forbidden, pattern)
+	}
+	sort.Strings(forbidden)
+
 	return Report{
-		Hatches:    sorted,
-		TotalLines: totalLines,
-		Rate:       rate,
-		FailAbove:  failAbove,
-		Passed:     rate <= failAbove,
+		Hatches:           sorted,
+		TotalLines:        totalLines,
+		Rate:              rate,
+		FailAbove:         failAbove,
+		ForbiddenPatterns: forbidden,
+		Passed:            rate <= failAbove && len(forbidden) == 0,
 	}
 }
 
@@ -112,7 +128,12 @@ func (r Report) WriteTable(w io.Writer, top int) {
 	if r.Passed {
 		fmt.Fprintf(w, "PASS: %.2f per 1000 lines is at or under %.2f\n", r.Rate, r.FailAbove)
 	} else {
-		fmt.Fprintf(w, "FAIL: %.2f per 1000 lines exceeds %.2f\n", r.Rate, r.FailAbove)
+		if len(r.ForbiddenPatterns) > 0 {
+			fmt.Fprintf(w, "FAIL: forbidden pattern(s) found: %s\n", strings.Join(r.ForbiddenPatterns, ", "))
+		}
+		if r.Rate > r.FailAbove {
+			fmt.Fprintf(w, "FAIL: %.2f per 1000 lines exceeds %.2f\n", r.Rate, r.FailAbove)
+		}
 	}
 }
 

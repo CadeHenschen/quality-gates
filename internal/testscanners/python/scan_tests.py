@@ -126,7 +126,7 @@ def scan_file(path):
 
 
 def main():
-    root = sys.argv[1]
+    root = os.getcwd()
     results = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))

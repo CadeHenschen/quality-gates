@@ -41,6 +41,16 @@ func TestUsageAndReadmeMatchEscapeLanguageContract(t *testing.T) {
 	}
 }
 
+func TestForgejoSelfChecksForbidGosecSuppressions(t *testing.T) {
+	workflow, err := os.ReadFile("../../.forgejo/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(workflow), "--forbid-pattern nosec"); got < 2 {
+		t.Fatalf("CI workflow has %d self-check commands banning nosec, want PR and post-merge checks", got)
+	}
+}
+
 func TestRunVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"version"}, &stdout, &stderr)
@@ -111,6 +121,20 @@ func TestRunAgainstGoTestdataPassAndFail(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "FAIL") {
 		t.Errorf("expected FAIL in output, got:\n%s", stdout.String())
+	}
+}
+
+func TestRunForbiddenPatternFailsDespiteHighRateLimit(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/escape/golang",
+		"--fail-above", "1000", "--forbid-pattern", "nosec", "--json", "",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "forbidden pattern") {
+		t.Errorf("expected output to identify forbidden pattern, got:\n%s", stdout.String())
 	}
 }
 

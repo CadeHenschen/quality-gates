@@ -18,7 +18,7 @@ type Tokenizer struct{}
 
 func (Tokenizer) Tokenize(opts tokenizers.Options) ([]dupe.FileTokens, error) {
 	var raw []tokenizers.RawFileTokens
-	if err := embedscript.Run("node", scannerScript, ".js", opts.Dir, &raw); err != nil {
+	if err := embedscript.Run("node", scannerScript, opts.Dir, &raw); err != nil {
 		return nil, err
 	}
 	return tokenizers.ToFileTokens(raw), nil

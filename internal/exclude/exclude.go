@@ -11,9 +11,10 @@
 package exclude
 
 import (
-	"os"
 	"regexp"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 // DefaultFile is the conventional, committable exclusion file a CLI looks
@@ -24,7 +25,7 @@ const DefaultFile = ".crap-metric-exclude"
 // (whole-line or trailing, so each exclusion can be explained in place),
 // blank lines ignored.
 func ReadFile(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
+	data, err := safefile.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@
 package python
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 
 	"git.roost-r.com/cadeh/quality-gates/internal/cycle"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 type Importer struct{}
@@ -27,7 +29,12 @@ var (
 	fromImportRe = regexp.MustCompile(`^\s*from\s+(\.*)([\w.]*)\s+import\s+(.+)`)
 )
 
-func (Importer) Import(opts importers.Options) (cycle.Graph, int, error) {
+func (Importer) Import(opts importers.Options) (graph cycle.Graph, scanned int, retErr error) {
+	root, err := safefile.OpenRoot(opts.Dir)
+	if err != nil {
+		return cycle.Graph{}, 0, err
+	}
+	defer func() { retErr = errors.Join(retErr, root.Close()) }()
 	files, err := walkPython(opts.Dir)
 	if err != nil {
 		return cycle.Graph{}, 0, err
@@ -38,9 +45,9 @@ func (Importer) Import(opts importers.Options) (cycle.Graph, int, error) {
 		existing[f] = true
 	}
 
-	graph := cycle.Graph{Edges: map[string][]string{}}
+	graph = cycle.Graph{Edges: map[string][]string{}}
 	for _, f := range files {
-		targets, unresolved, err := resolveWithIssues(opts.Dir, f, existing)
+		targets, unresolved, err := resolveWithIssues(root, f, existing)
 		if err != nil {
 			return cycle.Graph{}, 0, err
 		}
@@ -78,12 +85,15 @@ func walkPython(dir string) ([]string, error) {
 	return files, err
 }
 
-func resolveWithIssues(dir, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
-	data, err := os.ReadFile(filepath.Join(dir, file))
+func resolveWithIssues(root *os.Root, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
+	data, err := safefile.ReadFileAt(root, file)
 	if err != nil {
 		return nil, nil, err
 	}
+	return resolveSourceImports(data, file, existing)
+}
 
+func resolveSourceImports(data []byte, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
 	fileDir := filepath.ToSlash(filepath.Dir(file)) // "." for a top-level file
 	seen := map[string]bool{}
 	var targets []string

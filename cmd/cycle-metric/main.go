@@ -15,6 +15,7 @@ import (
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/python"
 	"git.roost-r.com/cadeh/quality-gates/internal/importers/typescript"
 	"git.roost-r.com/cadeh/quality-gates/internal/ratchet"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 const usage = `usage:
@@ -165,7 +166,7 @@ func cycleRatchet(scope ratchetScope, cycles []cycle.Cycle, stdout, stderr io.Wr
 }
 
 func writeJSONReport(report cycle.Report, path string) error {
-	f, err := os.Create(path)
+	f, err := safefile.Create(path)
 	if err != nil {
 		return err
 	}

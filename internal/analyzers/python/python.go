@@ -8,12 +8,13 @@ package python
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
+	"path/filepath"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
 	"git.roost-r.com/cadeh/quality-gates/internal/crap"
 	"git.roost-r.com/cadeh/quality-gates/internal/evidence"
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 type Analyzer struct{}
@@ -47,21 +48,19 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 	if err := json.Unmarshal(radonOut, &byFile); err != nil {
 		return nil, fmt.Errorf("parse radon output: %w", err)
 	}
+	byFile, err = normalizeRadonFiles(opts.Dir, byFile)
+	if err != nil {
+		return nil, err
+	}
 
 	sizes, err := sizeFacts(opts.Dir)
 	if err != nil {
 		return nil, fmt.Errorf("size facts: %w", err)
 	}
 
-	var cov coverageReport
-	if opts.CoveragePath != "" {
-		data, err := os.ReadFile(opts.CoveragePath)
-		if err != nil {
-			return nil, fmt.Errorf("read coverage report: %w", err)
-		}
-		if err := json.Unmarshal(data, &cov); err != nil {
-			return nil, fmt.Errorf("parse coverage report: %w", err)
-		}
+	cov, err := readCoverage(opts.CoveragePath)
+	if err != nil {
+		return nil, err
 	}
 
 	var out []crap.Function
@@ -116,6 +115,39 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 	return out, nil
 }
 
+func readCoverage(path string) (coverageReport, error) {
+	var report coverageReport
+	if path == "" {
+		return report, nil
+	}
+	data, err := safefile.ReadFile(path)
+	if err != nil {
+		return report, fmt.Errorf("read coverage report: %w", err)
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		return report, fmt.Errorf("parse coverage report: %w", err)
+	}
+	return report, nil
+}
+
+func normalizeRadonFiles(dir string, files map[string][]radonEntry) (map[string][]radonEntry, error) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	normalized := make(map[string][]radonEntry, len(files))
+	for file, entries := range files {
+		clean := filepath.Clean(file)
+		if filepath.IsAbs(clean) {
+			if rel, err := filepath.Rel(absDir, clean); err == nil {
+				clean = rel
+			}
+		}
+		normalized[filepath.Join(dir, clean)] = entries
+	}
+	return normalized, nil
+}
+
 // flatten drops radon's "class" entries. radon's top-level list already
 // includes each class's methods as their own flat "method" entries
 // alongside the class entry (which just repeats them under Methods for
@@ -141,7 +173,10 @@ func toSet(lines []int) map[int]struct{} {
 }
 
 func runRadon(dir string) ([]byte, error) {
-	cmd := exec.Command("radon", "cc", "-j", dir)
+	// Keep the executable and argv literal. The selected source directory is
+	// the process working directory, not an argument interpreted by Radon.
+	cmd := exec.Command("radon", "cc", "-j", ".")
+	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

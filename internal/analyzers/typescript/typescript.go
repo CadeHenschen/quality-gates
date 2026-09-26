@@ -52,7 +52,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 	}
 
 	var fns []jsFunction
-	if err := embedscript.Run("node", complexityScript, ".js", absDir, &fns); err != nil {
+	if err := embedscript.Run("node", complexityScript, absDir, &fns); err != nil {
 		return nil, err
 	}
 

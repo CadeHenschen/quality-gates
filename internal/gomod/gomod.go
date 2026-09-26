@@ -8,9 +8,10 @@ package gomod
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
 // Find locates the nearest go.mod at or above dir and returns its
@@ -22,7 +23,7 @@ func Find(dir string) (root, modulePath string, err error) {
 	}
 	for d := abs; ; {
 		modFile := filepath.Join(d, "go.mod")
-		if data, err := os.ReadFile(modFile); err == nil {
+		if data, err := safefile.ReadFile(modFile); err == nil {
 			for _, line := range strings.Split(string(data), "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "module ") {

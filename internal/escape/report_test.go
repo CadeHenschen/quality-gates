@@ -43,6 +43,17 @@ func TestNewReportZeroLinesNoDivideByZero(t *testing.T) {
 	}
 }
 
+func TestNewReportForbiddenPatternFailsIndependentOfRate(t *testing.T) {
+	hatches := []Hatch{{File: "safe.go", Line: 1, Pattern: "nosec"}}
+	report := NewReport(hatches, 10_000, 100, "nosec")
+	if report.Rate >= report.FailAbove {
+		t.Fatalf("test setup: rate %.3f should be below fail-above %.3f", report.Rate, report.FailAbove)
+	}
+	if report.Passed || report.ExitCode() != 1 {
+		t.Fatalf("forbidden pattern passed despite being present: %+v", report)
+	}
+}
+
 func TestWriteTableEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	NewReport(nil, 100, 5).WriteTable(&buf, 20)
