@@ -19,7 +19,8 @@ import (
 )
 
 const usage = `usage:
-  dupe-metric check --lang python|go|ts|swift --dir DIR [--min-tokens N] [--fail-above PCT] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
+  dupe-metric check --lang python|go|ts|swift --dir DIR [--min-tokens N]
+    [--fail-above PCT] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
   dupe-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -56,7 +57,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	minTokens := fs.Int("min-tokens", 40, "minimum matching token-block size to report as a duplicate")
 	failAbove := fs.Float64("fail-above", 5, "duplication percentage above which the gate fails")
 	top := fs.Int("top", 20, "number of duplicate blocks to print (0 = all)")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to duplicate blocks touching these files, so pre-existing duplication elsewhere doesn't block; omit to check the whole --dir as before")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only duplicate blocks touching listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not tokenized")
 	jsonOut := fs.String("json", "dupe-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {

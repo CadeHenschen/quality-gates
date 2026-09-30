@@ -24,8 +24,10 @@ func TestAnalyzeComplexity(t *testing.T) {
 	}
 
 	got := map[string]int{}
+	files := map[string]bool{}
 	for _, f := range fns {
 		got[f.Name] = f.Complexity
+		files[f.File] = true
 	}
 
 	for name, wantComplexity := range want {
@@ -40,6 +42,9 @@ func TestAnalyzeComplexity(t *testing.T) {
 	}
 	if len(got) != len(want) {
 		t.Errorf("got %d functions, want %d (got: %v)", len(got), len(want), got)
+	}
+	if !files["sample.go"] {
+		t.Errorf("analyzer File paths should be relative to --dir, got %v", files)
 	}
 }
 

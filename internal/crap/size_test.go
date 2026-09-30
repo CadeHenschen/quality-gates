@@ -13,15 +13,26 @@ func TestLineCount(t *testing.T) {
 	}
 }
 
+func TestMaxLineLengthCountsCodePointsAndReportsLine(t *testing.T) {
+	length, line := MaxLineLength([]byte("ab\r\n\t界🙂xyz\n"))
+	if length != 6 || line != 2 {
+		t.Errorf("MaxLineLength() = (%d, %d), want (6, 2)", length, line)
+	}
+	if length, line := MaxLineLength(nil); length != 0 || line != 0 {
+		t.Errorf("MaxLineLength(nil) = (%d, %d), want (0, 0)", length, line)
+	}
+}
+
 func TestSizeFindingsFlagsEachThreshold(t *testing.T) {
 	fns := []Function{
 		{File: "a.go", Name: "long", StartLine: 1, EndLine: 100, FileLines: 50}, // 100 lines
 		{File: "a.go", Name: "manyParams", StartLine: 200, EndLine: 201, ParamCount: 9, FileLines: 50},
 		{File: "a.go", Name: "deep", StartLine: 300, EndLine: 301, MaxNestingDepth: 7, FileLines: 50},
 		{File: "b.go", Name: "fine", StartLine: 1, EndLine: 2, ParamCount: 1, FileLines: 900},
-		{File: "b.go", Name: "alsoInB", StartLine: 10, EndLine: 11, FileLines: 900},
+		{File: "b.go", Name: "alsoInB", StartLine: 10, EndLine: 11, FileLines: 900, FileMaxLineLength: 170, FileMaxLineLengthLine: 12},
+		{File: "b.go", Name: "thirdInB", StartLine: 20, EndLine: 21, FileLines: 900, FileMaxLineLength: 170, FileMaxLineLengthLine: 12},
 	}
-	th := SizeThresholds{MaxLines: 80, MaxParams: 6, MaxNesting: 4, MaxFileLines: 600}
+	th := SizeThresholds{MaxLines: 80, MaxParams: 6, MaxNesting: 4, MaxFileLines: 600, MaxLineLength: 150}
 
 	got := sizeFindings(fns, th)
 
@@ -43,17 +54,32 @@ func TestSizeFindingsFlagsEachThreshold(t *testing.T) {
 	if kinds["file_lines"] != 1 {
 		t.Errorf("file_lines findings = %d, want 1 (deduplicated across b.go's two functions)", kinds["file_lines"])
 	}
+	if kinds["file_line_length"] != 1 {
+		t.Errorf("file_line_length findings = %d, want 1 (deduplicated across b.go's three functions)", kinds["file_line_length"])
+	}
+	for _, finding := range got {
+		if finding.Kind == "file_line_length" && (finding.StartLine != 12 || finding.Value != 170 || finding.Threshold != 150) {
+			t.Errorf("file_line_length finding = %+v, want line 12, width 170, threshold 150", finding)
+		}
+	}
 }
 
 func TestSizeFindingsThresholdDisabledByZeroOrNegative(t *testing.T) {
 	fns := []Function{
-		{File: "a.go", Name: "huge", StartLine: 1, EndLine: 1000, ParamCount: 20, MaxNestingDepth: 20, FileLines: 5000},
+		{File: "a.go", Name: "huge", StartLine: 1, EndLine: 1000, ParamCount: 20, MaxNestingDepth: 20, FileLines: 5000, FileMaxLineLength: 500, FileMaxLineLengthLine: 1},
 	}
 	if got := sizeFindings(fns, SizeThresholds{}); len(got) != 0 {
 		t.Errorf("zero-value SizeThresholds should disable every check, got %v", got)
 	}
-	if got := sizeFindings(fns, SizeThresholds{MaxLines: -1, MaxParams: -1, MaxNesting: -1, MaxFileLines: -1}); len(got) != 0 {
+	if got := sizeFindings(fns, SizeThresholds{MaxLines: -1, MaxParams: -1, MaxNesting: -1, MaxFileLines: -1, MaxLineLength: -1}); len(got) != 0 {
 		t.Errorf("negative thresholds should disable every check, got %v", got)
+	}
+}
+
+func TestMaxLineLengthThresholdAllowsExactLimit(t *testing.T) {
+	fns := []Function{{File: "a.go", Name: "f", FileMaxLineLength: 150, FileMaxLineLengthLine: 4}}
+	if got := sizeFindings(fns, SizeThresholds{MaxLineLength: 150}); len(got) != 0 {
+		t.Errorf("a line exactly at the limit should pass, got %+v", got)
 	}
 }
 
@@ -85,6 +111,21 @@ func TestWithSizeFailsReportAndPreservesCrapPass(t *testing.T) {
 	}
 	if !strings.Contains(out, "SIZE:") || !strings.Contains(out, "200 lines (> 80)") {
 		t.Errorf("expected a SIZE section naming the violation, got:\n%s", out)
+	}
+}
+
+func TestWithSizePrintsMaxLineLength(t *testing.T) {
+	report := NewReport([]Function{{
+		File: "b.go", Name: "f", Complexity: 1, LinesTotal: 1, LinesCovered: 1,
+		StartLine: 1, EndLine: 1, FileMaxLineLength: 170, FileMaxLineLengthLine: 12,
+	}}, 30).WithSize(SizeThresholds{MaxLineLength: 150})
+	if report.Passed || len(report.SizeFindings) != 1 {
+		t.Fatalf("report = passed %v, findings %+v; want one failing line-length finding", report.Passed, report.SizeFindings)
+	}
+	var buf bytes.Buffer
+	report.WriteTable(&buf, 20, false)
+	if !strings.Contains(buf.String(), "b.go:12: longest line is 170 characters (> 150)") {
+		t.Errorf("expected a location-bearing line-length finding, got:\n%s", buf.String())
 	}
 }
 

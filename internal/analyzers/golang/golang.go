@@ -130,7 +130,9 @@ func analyzeFile(root *os.Root, openPath, path string, ctx analysisContext) ([]c
 		total, covered, uncovered := coverageForRange(ctx.blocks, importPath, start, end)
 
 		out = append(out, crap.Function{
-			File:            rel,
+			// Reports and --only-files use paths relative to --dir. The
+			// module-root-relative path above is only for coverage lookup.
+			File:            filepath.ToSlash(openPath),
 			Name:            funcName(fn),
 			StartLine:       start,
 			EndLine:         end,

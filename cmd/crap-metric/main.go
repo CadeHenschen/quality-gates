@@ -21,7 +21,11 @@ import (
 )
 
 const usage = `usage:
-  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH] [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N] [--max-file-lines N] [--top N] [--verbose] [--require-analysis] [--only-files PATH] [--exclude GLOB]... [--exclude-file PATH] [--json PATH]
+  crap-metric check --lang python|go|ts|swift --dir DIR [--coverage PATH]
+    [--fail-above N] [--max-lines N] [--max-params N] [--max-nesting N]
+    [--max-file-lines N] [--max-line-length N] [--top N] [--verbose]
+    [--require-analysis] [--only-files PATH] [--exclude GLOB]...
+    [--exclude-file PATH] [--json PATH]
   crap-metric diff --old PATH --new PATH [--top N] [--json]
   crap-metric version`
 
@@ -68,11 +72,12 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	maxParams := fs.Int("max-params", 6, "parameter count above which the gate fails; <=0 disables")
 	maxNesting := fs.Int("max-nesting", 5, "control-flow nesting depth above which the gate fails; <=0 disables")
 	maxFileLines := fs.Int("max-file-lines", 600, "file length (lines) above which the gate fails; <=0 disables")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to only functions in these files, so pre-existing hotspots elsewhere don't block; omit to check the whole --dir as before")
+	maxLineLength := fs.Int("max-line-length", 320, "file's longest physical line (Unicode code points) above which the gate fails; <=0 disables")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only functions in listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not analyzed")
 	var excludes stringList
-	fs.Var(&excludes, "exclude", "glob of --dir-relative files to drop from analysis entirely (repeatable; e.g. 'internal/gen/**', '**/*_pb.go'). Unlike --only-files this removes files from the report too")
-	excludeFile := fs.String("exclude-file", "", "file of exclude globs, one per line, '#' comments (default: "+exclude.DefaultFile+" in --dir, if present; commit it to keep exclusions reviewable)")
+	fs.Var(&excludes, "exclude", "glob of --dir-relative files to omit from analysis (repeatable; removes files from the report too)")
+	excludeFile := fs.String("exclude-file", "", "file of exclude globs (default: "+exclude.DefaultFile+" in --dir, if present)")
 	jsonOut := fs.String("json", "crap-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -90,7 +95,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sizeThresholds := crap.SizeThresholds{
-		MaxLines: *maxLines, MaxParams: *maxParams, MaxNesting: *maxNesting, MaxFileLines: *maxFileLines,
+		MaxLines: *maxLines, MaxParams: *maxParams, MaxNesting: *maxNesting, MaxFileLines: *maxFileLines, MaxLineLength: *maxLineLength,
 	}
 
 	// The full report (every function in --dir) is always what gets

@@ -320,7 +320,7 @@ jobs:
           fi
 
       - name: crap-metric check (self)
-        run: ./crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --verbose
+        run: ./crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --max-line-length 150 --verbose
 
       - name: dupe-metric check (self)
         # --fail-above 18 — see CLAUDE.md's "dupe-metric self-check
@@ -437,7 +437,7 @@ jobs:
           fi
 
       - name: crap-metric check (self)
-        run: crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --verbose
+        run: crap-metric check --lang go --dir . --coverage cover.out --fail-above 30 --max-line-length 150 --verbose
 
       - name: dupe-metric check (self)
         # --fail-above 18, not the tool's own default of 5: merging four

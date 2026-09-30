@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -135,6 +136,57 @@ func TestRunAgainstGoTestdataPassAndFail(t *testing.T) {
 	}
 }
 
+func TestRunCheckMaxLineLengthFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	code := run([]string{
+		"check", "--lang", "go", "--dir", "../../testdata/crap/golang",
+		"--fail-above", "1000", "--max-line-length", "1", "--json", jsonPath,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "longest line is") || !strings.Contains(stdout.String(), "characters (> 1)") {
+		t.Errorf("expected --max-line-length findings, got:\n%s", stdout.String())
+	}
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("reading --json output: %v", err)
+	}
+	var decoded struct {
+		SizeThresholds struct {
+			MaxLineLength int `json:"max_line_length"`
+		} `json:"size_thresholds"`
+		SizeFindings []struct {
+			Kind      string `json:"kind"`
+			StartLine int    `json:"start_line"`
+		} `json:"size_findings"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decoding --json output: %v", err)
+	}
+	if decoded.SizeThresholds.MaxLineLength != 1 || len(decoded.SizeFindings) == 0 || decoded.SizeFindings[0].Kind != "file_line_length" || decoded.SizeFindings[0].StartLine == 0 {
+		t.Errorf("JSON line-length threshold/findings = %+v, want configured threshold and location-bearing finding", decoded)
+	}
+}
+
+func TestRunCheckMaxLineLengthWithPythonSubdirectory(t *testing.T) {
+	if _, err := exec.LookPath("radon"); err != nil {
+		t.Skip("radon not on PATH")
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check", "--lang", "python", "--dir", "../../testdata/crap/python",
+		"--fail-above", "1000", "--max-line-length", "1", "--json", "",
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 (stderr: %s)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "longest line is") {
+		t.Errorf("expected a Python line-length finding with a non-dot --dir, got:\n%s", stdout.String())
+	}
+}
+
 func TestRunSizeGateFailsAndDefaultsPassSmallFixture(t *testing.T) {
 	// Default thresholds (--max-params 6 etc.) are generous enough that
 	// the tiny golang-size fixture (5 params) passes untouched.
@@ -201,7 +253,7 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{
 		"check", "--lang", "go", "--dir", "../../testdata/crap/golang",
-		"--fail-above", "0", "--only-files", unrelated,
+		"--fail-above", "0", "--max-line-length", "1", "--only-files", unrelated,
 		"--json", filepath.Join(dir, "report.json"),
 	}, &stdout, &stderr)
 	if code != 0 {
@@ -210,6 +262,9 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, "FAIL: at least one function exceeds CRAP") {
 		t.Errorf("expected the full, unscoped report to still show its own FAIL, got:\n%s", out)
+	}
+	if !strings.Contains(out, "longest line is") {
+		t.Errorf("expected the full report to retain its unscoped line-length finding, got:\n%s", out)
 	}
 	if !strings.Contains(out, "ratchet scope: 0 function(s)") {
 		t.Errorf("expected a 'ratchet scope: 0 function(s)' line, got:\n%s", out)
@@ -245,14 +300,14 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	stderr.Reset()
 	code = run([]string{
 		"check", "--lang", "go", "--dir", "../../testdata/crap/golang",
-		"--fail-above", "0", "--only-files", touched,
+		"--fail-above", "1000", "--max-line-length", "1", "--only-files", touched,
 		"--json", filepath.Join(dir, "report2.json"),
 	}, &stdout, &stderr)
 	if code != 1 {
-		t.Fatalf("exit code = %d, want 1 (touched file should still be gated, stderr: %s)", code, stderr.String())
+		t.Fatalf("exit code = %d, want 1 (touched file's line-length finding should fail, stderr: %s)", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "FAIL (ratcheted)") {
-		t.Errorf("expected 'FAIL (ratcheted)' in output, got:\n%s", stdout.String())
+		t.Errorf("expected the in-scope line-length finding to fail the ratchet, got:\n%s", stdout.String())
 	}
 }
 

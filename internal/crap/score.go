@@ -49,6 +49,11 @@ type Function struct {
 	// size metrics as "extra fields on crap.Function" per CLAUDE.md,
 	// mirroring escape-metric's LinesByFile in spirit but not shape.
 	FileLines int `json:"file_lines"`
+	// FileMaxLineLength and FileMaxLineLengthLine identify the longest
+	// physical source line in this file, measured in Unicode code points.
+	// Tabs count as one code point; the line number is 1-based.
+	FileMaxLineLength     int `json:"file_max_line_length"`
+	FileMaxLineLengthLine int `json:"file_max_line_length_line"`
 }
 
 // LineCount is the function's own physical length: EndLine - StartLine +

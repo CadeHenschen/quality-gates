@@ -92,7 +92,8 @@ func (r Report) WriteTable(w io.Writer, top int, verbose bool) {
 
 	fmt.Fprintln(w)
 	if n, files := r.unmeasured(); n > 0 {
-		fmt.Fprintf(w, "WARNING: %d function(s) in %d file(s) are absent from the coverage report (no test loads them) and are scored as 0%% covered:\n", n, len(files))
+		fmt.Fprintf(w, "WARNING: %d function(s) in %d file(s) are absent from the coverage report "+
+			"(no test loads them) and are scored as 0%% covered:\n", n, len(files))
 		for _, f := range files {
 			fmt.Fprintf(w, "  %s\n", f)
 		}
@@ -136,6 +137,8 @@ func writeSizeFindings(w io.Writer, findings []SizeFinding) {
 			fmt.Fprintf(w, "  %s %s: nesting depth %d (> %d)\n", loc, f.Name, f.Value, f.Threshold)
 		case "file_lines":
 			fmt.Fprintf(w, "  %s: file is %d lines (> %d)\n", loc, f.Value, f.Threshold)
+		case "file_line_length":
+			fmt.Fprintf(w, "  %s: longest line is %d characters (> %d)\n", loc, f.Value, f.Threshold)
 		}
 	}
 	fmt.Fprintln(w)

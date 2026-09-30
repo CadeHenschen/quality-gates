@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"git.roost-r.com/cadeh/quality-gates/internal/analyzers"
@@ -99,6 +100,33 @@ func TestAnalyzeComplexityAndCoverage(t *testing.T) {
 			t.Errorf("%s uncovered lines = %v, want %v", c.name, got.UncoveredLines, c.uncovered)
 		}
 	}
+}
+
+func TestAnalyzeFilePathsAreRelativeToDir(t *testing.T) {
+	skipIfNoRadon(t)
+	for _, dir := range []string{"../../../testdata/crap/python", absTestdataDir(t)} {
+		fns, err := Analyzer{}.Analyze(analyzers.Options{Dir: dir})
+		if err != nil {
+			t.Fatalf("Analyze(%q): %v", dir, err)
+		}
+		if len(fns) == 0 {
+			t.Fatalf("Analyze(%q) returned no functions", dir)
+		}
+		for _, fn := range fns {
+			if filepath.IsAbs(fn.File) || strings.HasPrefix(fn.File, "../") || strings.HasPrefix(fn.File, "testdata/") {
+				t.Errorf("Analyze(%q) File = %q, want a path relative to --dir", dir, fn.File)
+			}
+		}
+	}
+}
+
+func absTestdataDir(t *testing.T) string {
+	t.Helper()
+	absDir, err := filepath.Abs("../../../testdata/crap/python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return absDir
 }
 
 func TestAnalyzeWithoutCoverageReport(t *testing.T) {

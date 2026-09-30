@@ -65,6 +65,10 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 
 	var out []crap.Function
 	for file, entries := range byFile {
+		rel, err := filepath.Rel(opts.Dir, file)
+		if err != nil {
+			return nil, fmt.Errorf("relative path for %s: %w", file, err)
+		}
 		fileCov, inReport := cov.Files[file]
 		unmeasured := opts.CoveragePath != "" && !inReport
 		executed := toSet(fileCov.ExecutedLines)
@@ -90,7 +94,7 @@ func (Analyzer) Analyze(opts analyzers.Options) ([]crap.Function, error) {
 
 			size := sizes[sizeKey{file, e.Lineno}]
 			out = append(out, crap.Function{
-				File:            file,
+				File:            filepath.ToSlash(rel),
 				Name:            e.Name,
 				StartLine:       e.Lineno,
 				EndLine:         e.Endline,

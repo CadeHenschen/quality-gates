@@ -1,6 +1,26 @@
 package crap
 
-import "sort"
+import (
+	"sort"
+	"strings"
+	"unicode/utf8"
+)
+
+// MaxLineLength returns the longest physical line's length in Unicode code
+// points and its 1-based line number. Tabs count as one code point; CRLF's
+// carriage return is treated as part of the line ending, not its content.
+func MaxLineLength(source []byte) (length, line int) {
+	if len(source) == 0 {
+		return 0, 0
+	}
+	for i, text := range strings.Split(string(source), "\n") {
+		text = strings.TrimSuffix(text, "\r")
+		if n := utf8.RuneCountInString(text); n > length {
+			length, line = n, i+1
+		}
+	}
+	return length, line
+}
 
 // SizeThresholds are generous size/shape gates, orthogonal to CRAP's
 // complexity x (1-coverage) risk score: a flat 40-case switch scores high
@@ -9,17 +29,18 @@ import "sort"
 // Each threshold is a physical count, not a risk score; <= 0 disables it,
 // matching internal/mutation's --min-mutants convention.
 type SizeThresholds struct {
-	MaxLines     int `json:"max_lines"`
-	MaxParams    int `json:"max_params"`
-	MaxNesting   int `json:"max_nesting"`
-	MaxFileLines int `json:"max_file_lines"`
+	MaxLines      int `json:"max_lines"`
+	MaxParams     int `json:"max_params"`
+	MaxNesting    int `json:"max_nesting"`
+	MaxFileLines  int `json:"max_file_lines"`
+	MaxLineLength int `json:"max_line_length"`
 }
 
 // enabled reports whether any threshold is actually gating, so callers
 // (WriteTable) can tell "size gate configured, nothing crossed it" apart
 // from "no size gate configured at all".
 func (th SizeThresholds) enabled() bool {
-	return th.MaxLines > 0 || th.MaxParams > 0 || th.MaxNesting > 0 || th.MaxFileLines > 0
+	return th.MaxLines > 0 || th.MaxParams > 0 || th.MaxNesting > 0 || th.MaxFileLines > 0 || th.MaxLineLength > 0
 }
 
 // SizeFinding is one function or file that crossed a SizeThresholds gate.
@@ -29,7 +50,7 @@ type SizeFinding struct {
 	// is about the file as a whole rather than any one function in it.
 	Name      string `json:"name,omitempty"`
 	StartLine int    `json:"start_line,omitempty"`
-	// Kind is "lines", "params", "nesting", or "file_lines".
+	// Kind is "lines", "params", "nesting", "file_lines", or "file_line_length".
 	Kind      string `json:"kind"`
 	Value     int    `json:"value"`
 	Threshold int    `json:"threshold"`
@@ -42,11 +63,20 @@ type SizeFinding struct {
 func sizeFindings(fns []Function, th SizeThresholds) []SizeFinding {
 	var out []SizeFinding
 	seenFile := map[string]bool{}
+	seenLineLength := map[string]bool{}
 	for _, f := range fns {
 		out = append(out, functionSizeFindings(f, th)...)
 		if th.MaxFileLines > 0 && f.FileLines > th.MaxFileLines && !seenFile[f.File] {
 			seenFile[f.File] = true
 			out = append(out, SizeFinding{File: f.File, Kind: "file_lines", Value: f.FileLines, Threshold: th.MaxFileLines})
+		}
+		if th.MaxLineLength > 0 && f.FileMaxLineLength > th.MaxLineLength && !seenLineLength[f.File] {
+			seenLineLength[f.File] = true
+			out = append(out, SizeFinding{
+				File: f.File, StartLine: f.FileMaxLineLengthLine,
+				Kind: "file_line_length", Value: f.FileMaxLineLength,
+				Threshold: th.MaxLineLength,
+			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -74,7 +104,10 @@ func functionSizeFindings(f Function, th SizeThresholds) []SizeFinding {
 		out = append(out, SizeFinding{File: f.File, Name: f.Name, StartLine: f.StartLine, Kind: "params", Value: f.ParamCount, Threshold: th.MaxParams})
 	}
 	if th.MaxNesting > 0 && f.MaxNestingDepth > th.MaxNesting {
-		out = append(out, SizeFinding{File: f.File, Name: f.Name, StartLine: f.StartLine, Kind: "nesting", Value: f.MaxNestingDepth, Threshold: th.MaxNesting})
+		out = append(out, SizeFinding{
+			File: f.File, Name: f.Name, StartLine: f.StartLine,
+			Kind: "nesting", Value: f.MaxNestingDepth, Threshold: th.MaxNesting,
+		})
 	}
 	return out
 }

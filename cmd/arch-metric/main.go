@@ -25,7 +25,8 @@ import (
 
 const usage = `usage:
   arch-metric check     --lang python|ts|go --dir DIR [--rules PATH] [--fail-above N] [--top N] [--require-analysis] [--only-files PATH] [--json PATH]
-  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N] [--top N] [--require-analysis] [--only-files PATH | --baseline PATH] [--json PATH]
+  arch-metric stability --lang python|ts|go --dir DIR [--fail-above N]
+    [--top N] [--require-analysis] [--only-files PATH | --baseline PATH] [--json PATH]
   arch-metric diff      --old PATH --new PATH [--top N] [--json]
   arch-metric version`
 
@@ -77,7 +78,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	rulesPath := fs.String("rules", "", fmt.Sprintf("path to the layer-rules JSON file (default: <dir>/%s)", arch.DefaultRulesFile))
 	failAbove := fs.Int("fail-above", 0, "number of violations above which the gate fails")
 	top := fs.Int("top", 20, "number of violations to print (0 = all)")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to violations touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only violations touching listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not in the import graph")
 	jsonOut := fs.String("json", "arch-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
@@ -193,9 +194,9 @@ func runStability(args []string, stdout, stderr io.Writer) int {
 	dir := fs.String("dir", ".", "source directory to analyze")
 	failAbove := fs.Int("fail-above", 0, "number of stable-dependency violations above which the gate fails")
 	top := fs.Int("top", 20, "number of violations to print (0 = all)")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to violations touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only violations touching listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not in the import graph")
-	baselinePath := fs.String("baseline", "", "previous arch-stability JSON report; gates only violations newly introduced since it (cannot be combined with --only-files)")
+	baselinePath := fs.String("baseline", "", "previous stability report; gates new violations (incompatible with --only-files)")
 	jsonOut := fs.String("json", "arch-stability-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -428,7 +429,7 @@ func importerFor(lang string) (importers.Importer, error) {
 	case "go", "golang":
 		return golang.Importer{}, nil
 	case "swift":
-		return nil, fmt.Errorf("--lang swift isn't supported: Swift files within one module never import each other (no per-file import graph exists the way Python/TS/Go have one), and cross-module resolution would need Package.swift-level target-to-directory mapping this tool doesn't implement — see README")
+		return nil, fmt.Errorf("--lang swift isn't supported: same-module imports don't exist; cross-module checks need Package.swift metadata")
 	case "":
 		return nil, fmt.Errorf("--lang is required")
 	default:

@@ -64,7 +64,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	dir := fs.String("dir", ".", "source directory to analyze")
 	failAbove := fs.Int("fail-above", 0, "number of cycles above which the gate fails")
 	top := fs.Int("top", 20, "number of cycles to print (0 = all)")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to cycles touching these files, so pre-existing ones don't block; omit to check the whole --dir as before")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only cycles touching listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not in the import graph")
 	jsonOut := fs.String("json", "cycle-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
@@ -181,9 +181,10 @@ func importerFor(lang string) (importers.Importer, error) {
 	case "ts", "typescript", "js", "javascript":
 		return typescript.Importer{}, nil
 	case "go", "golang":
-		return nil, fmt.Errorf("--lang go isn't supported: the Go compiler already refuses to build a package-import cycle, so this check would always report zero — see README")
+		return nil, fmt.Errorf("--lang go isn't supported: the Go compiler already refuses to build a package-import cycle, " +
+			"so this check would always report zero — see README")
 	case "swift":
-		return nil, fmt.Errorf("--lang swift isn't supported: Swift files within one module never import each other (no per-file import graph exists to detect a cycle in), and cross-module detection would need Package.swift-level resolution this tool doesn't implement — see README")
+		return nil, fmt.Errorf("--lang swift isn't supported: same-module files don't import; cross-module checks need Package.swift resolution")
 	case "":
 		return nil, fmt.Errorf("--lang is required")
 	default:

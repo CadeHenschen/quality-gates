@@ -688,6 +688,11 @@ gate, since there's no `crap.Function` to stamp it onto. Not worth a
 separate per-file walk in every one of four analyzers for what should be
 a rare case in practice.
 
+The maximum physical line length follows the same file-fact shape. It is
+measured in Unicode code points (tabs count as one), and its 1-based line
+number is retained for a useful finding location. The CLI default is 320;
+this repository's self-check uses 150 as its own readability policy.
+
 **Defaults were picked by running the gate against this repo's own real
 source, not guessed** — same discipline as dupe-metric's 18% self-check
 threshold and dead-metric's vulture/knip confidence tuning above.

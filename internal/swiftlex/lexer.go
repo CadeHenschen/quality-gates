@@ -391,7 +391,10 @@ func (l *lexer) tryStartString() bool {
 		delimLen = hash + 3
 	}
 	l.pos = start + delimLen
-	l.frames = append(l.frames, frame{kind: frameString, hash: hash, multiline: multiline, startLine: startLine, startPos: start, topLevel: len(l.frames) == 0})
+	l.frames = append(l.frames, frame{
+		kind: frameString, hash: hash, multiline: multiline,
+		startLine: startLine, startPos: start, topLevel: len(l.frames) == 0,
+	})
 	return true
 }
 

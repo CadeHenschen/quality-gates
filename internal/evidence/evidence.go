@@ -39,7 +39,11 @@ func Eligible(dir, lang string, tests bool) ([]string, error) {
 		}
 		if entry.IsDir() {
 			name := entry.Name()
-			if path != dir && (strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "testdata" || name == ".build" || name == ".swiftpm" || name == "Pods" || name == "venv" || name == "__pycache__" || (lang == "swift" && !tests && name == "Tests")) {
+			skipped := strings.HasPrefix(name, ".") || name == "node_modules" ||
+				name == "vendor" || name == "testdata" || name == ".build" ||
+				name == ".swiftpm" || name == "Pods" || name == "venv" ||
+				name == "__pycache__" || (lang == "swift" && !tests && name == "Tests")
+			if path != dir && skipped {
 				return filepath.SkipDir
 			}
 			return nil

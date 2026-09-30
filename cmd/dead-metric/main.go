@@ -17,7 +17,9 @@ import (
 )
 
 const usage = `usage:
-  dead-metric --report PATH [--format deadcode|knip|vulture|periphery] [--dir DIR] [--ignore FILE] [--fail-above N] [--top N] [--only-files PATH] [--json PATH]
+  dead-metric --report PATH [--format deadcode|knip|vulture|periphery]
+    [--dir DIR] [--ignore FILE] [--fail-above N] [--top N]
+    [--only-files PATH] [--json PATH]
   dead-metric version`
 
 // version is overridden at build time via -ldflags "-X main.version=...";
@@ -42,13 +44,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	fs := flag.NewFlagSet("dead-metric", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	reportPath := fs.String("report", "", "dead-code report to gate on: `deadcode -json` (Go), `knip --reporter json` (TS/JS), `vulture` output (Python), or `periphery scan --format json` (Swift)")
-	format := fs.String("format", "", "report format: deadcode, knip, vulture, or periphery (default: auto-detect; needed to accept an empty vulture report, since vulture prints nothing when clean)")
+	reportPath := fs.String("report", "", "dead-code report to gate on (deadcode, knip, vulture, or periphery output)")
+	format := fs.String("format", "", "report format (needed for empty vulture reports; default: auto-detect)")
 	dir := fs.String("dir", "", "relativize absolute paths in the report to this directory")
-	ignorePath := fs.String("ignore", "", "allowlist file: symbol names, globs and dir/ prefixes for code that is live in fact (reflection, plugins, public API)")
+	ignorePath := fs.String("ignore", "", "allowlist file for code live through reflection, plugins, or public API")
 	failAbove := fs.Int("fail-above", 0, "number of dead symbols above which the gate fails")
 	top := fs.Int("top", 20, "number of findings to print (0 = all)")
-	onlyFilesPath := fs.String("only-files", "", "path to a newline-separated changed-file list (e.g. `git diff --name-only`) — ratchets the gate to findings in these files, so pre-existing ones elsewhere don't block; omit to gate the whole report")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; only findings in listed files fail the gate")
 	jsonOut := fs.String("json", "dead-report.json", "path to write the full JSON report")
 	if err := fs.Parse(args); err != nil {
 		return 2

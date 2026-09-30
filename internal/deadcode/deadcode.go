@@ -103,7 +103,8 @@ func detectFormat(data []byte) (string, error) {
 	trimmed := strings.TrimSpace(string(data))
 	switch {
 	case trimmed == "":
-		return "", fmt.Errorf("empty dead-code report: can't tell a clean run from a step that failed to run; for a clean vulture run (it prints nothing) pass --format %s", FormatVulture)
+		return "", fmt.Errorf("empty dead-code report: can't distinguish a clean run from a skipped step; "+
+			"for a clean vulture run (it prints nothing), pass --format %s", FormatVulture)
 	case strings.HasPrefix(trimmed, "[") && isPeripheryArray(data):
 		return FormatPeriphery, nil
 	case trimmed == "null" || strings.HasPrefix(trimmed, "["):
@@ -114,7 +115,8 @@ func detectFormat(data []byte) (string, error) {
 	case vultureLine.MatchString(strings.SplitN(trimmed, "\n", 2)[0]):
 		return FormatVulture, nil
 	}
-	return "", fmt.Errorf("unrecognized dead-code report: want `deadcode -json` (Go), `knip --reporter json` (TS/JS) `vulture` (Python) or `periphery` (Swift) output")
+	return "", fmt.Errorf("unrecognized dead-code report: want `deadcode -json` (Go), " +
+		"`knip --reporter json` (TS/JS), `vulture` (Python), or `periphery` (Swift) output")
 }
 
 func normalizePath(file, dir string) string {
