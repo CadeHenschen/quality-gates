@@ -338,11 +338,11 @@ func TestRunCheckVerboseShowsUncoveredLines(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{
 		"check", "--lang", "go", "--dir", "../../testdata/crap/golang",
-		"--coverage", covPath, "--fail-above", "1000", "--verbose",
+		"--coverage", covPath, "--fail-above", "2", "--verbose",
 		"--json", filepath.Join(t.TempDir(), "crap-report.json"),
 	}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1 for a CRAP threshold failure (stderr: %s)", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "uncovered: 11-13") {
 		t.Errorf("expected an 'uncovered: 11-13' line for Branchy, got:\n%s", stdout.String())

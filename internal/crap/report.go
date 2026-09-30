@@ -50,47 +50,54 @@ func renderRows(rows []Scored) (widths [5]int, rendered []row) {
 	return widths, rendered
 }
 
-// WriteTable writes a human-readable, worst-first hotspot table to w. Rows
-// beyond top are omitted with a summary line, since a full function listing
-// isn't useful CI output for a repo with hundreds of functions. When
-// verbose is true, each row that has uncovered lines gets an indented
-// "uncovered: ..." line beneath it, pointing straight at what to test.
+// WriteTable writes a human-readable table of functions that exceed the
+// report's CRAP threshold. Rows beyond top are omitted with a summary line.
+// Passing functions remain in the JSON report but do not clutter CI output.
+// When verbose is true, each displayed row that has uncovered lines gets an
+// indented "uncovered: ..." line beneath it, pointing straight at what to test.
 func (r Report) WriteTable(w io.Writer, top int, verbose bool) {
 	if len(r.Functions) == 0 {
 		fmt.Fprintln(w, "no functions analyzed")
 		return
 	}
 
-	rows := r.Functions
+	rows := make([]Scored, 0, len(r.Functions))
+	for _, s := range r.Functions {
+		if s.Crap > r.FailAbove {
+			rows = append(rows, s)
+		}
+	}
+
 	truncated := 0
 	if top > 0 && len(rows) > top {
 		truncated = len(rows) - top
 		rows = rows[:top]
 	}
 
-	widths, rendered := renderRows(rows)
-	printRow(w, row{"FILE", "FUNCTION", "COMPLEXITY", "COVERAGE", "CRAP"}, widths)
-	printRow(w, row{
-		strings.Repeat("-", widths[0]),
-		strings.Repeat("-", widths[1]),
-		strings.Repeat("-", widths[2]),
-		strings.Repeat("-", widths[3]),
-		strings.Repeat("-", widths[4]),
-	}, widths)
-	for i, r := range rendered {
-		printRow(w, r, widths)
-		if verbose {
-			if ranges := rows[i].UncoveredLines; len(ranges) > 0 {
-				fmt.Fprintf(w, "    uncovered: %s\n", formatRanges(ranges))
+	if len(rows) > 0 {
+		widths, rendered := renderRows(rows)
+		printRow(w, row{"FILE", "FUNCTION", "COMPLEXITY", "COVERAGE", "CRAP"}, widths)
+		printRow(w, row{
+			strings.Repeat("-", widths[0]),
+			strings.Repeat("-", widths[1]),
+			strings.Repeat("-", widths[2]),
+			strings.Repeat("-", widths[3]),
+			strings.Repeat("-", widths[4]),
+		}, widths)
+		for i, r := range rendered {
+			printRow(w, r, widths)
+			if verbose {
+				if ranges := rows[i].UncoveredLines; len(ranges) > 0 {
+					fmt.Fprintf(w, "    uncovered: %s\n", formatRanges(ranges))
+				}
 			}
 		}
-	}
 
-	if truncated > 0 {
-		fmt.Fprintf(w, "... %d more function(s) not shown\n", truncated)
+		if truncated > 0 {
+			fmt.Fprintf(w, "... %d more function(s) exceeding CRAP %.1f not shown\n", truncated, r.FailAbove)
+		}
+		fmt.Fprintln(w)
 	}
-
-	fmt.Fprintln(w)
 	if n, files := r.unmeasured(); n > 0 {
 		fmt.Fprintf(w, "WARNING: %d function(s) in %d file(s) are absent from the coverage report "+
 			"(no test loads them) and are scored as 0%% covered:\n", n, len(files))

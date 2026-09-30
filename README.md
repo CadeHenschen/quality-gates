@@ -112,6 +112,9 @@ test-metric   mutation --report PATH [--dir <dir>] [--lang <go|python|ts|swift>]
 ```
 
 Every `check` also takes `--top N` (rows to print, default 20, `0` = all).
+For `crap-metric`, `--top` limits the over-threshold function rows printed;
+passing functions remain available in the full JSON report. Size violations
+are reported independently, including when every function passes CRAP.
 `version` prints the build's short commit SHA (`dev` for a plain
 `go build`/`go run`, since it's baked in via `-ldflags` — see Status).
 

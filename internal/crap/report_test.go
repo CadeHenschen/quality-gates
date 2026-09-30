@@ -25,10 +25,24 @@ func TestWriteTablePass(t *testing.T) {
 	report.WriteTable(&buf, 20, false)
 	out := buf.String()
 
-	for _, want := range []string{"a.go:1", "f", "FILE", "FUNCTION", "PASS: no function exceeds CRAP 30.0"} {
+	for _, want := range []string{"PASS: no function exceeds CRAP 30.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q, got:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "FILE") || strings.Contains(out, "a.go:1") {
+		t.Errorf("passing CRAP report should not print a hotspot table, got:\n%s", out)
+	}
+	var jsonBuf bytes.Buffer
+	if err := report.WriteJSON(&jsonBuf); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	var decoded Report
+	if err := json.Unmarshal(jsonBuf.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode full report: %v", err)
+	}
+	if len(decoded.Functions) != 1 || decoded.Functions[0].Name != "f" {
+		t.Errorf("passing function missing from full JSON report: %+v", decoded.Functions)
 	}
 	if strings.Contains(out, "FAIL") {
 		t.Errorf("passing report shouldn't mention FAIL, got:\n%s", out)
@@ -38,33 +52,45 @@ func TestWriteTablePass(t *testing.T) {
 func TestWriteTableFailAndTruncation(t *testing.T) {
 	fns := []Function{
 		{Name: "risky", Complexity: 10, LinesTotal: 10, LinesCovered: 0}, // crap 110
-		{Name: "mid", Complexity: 4, LinesTotal: 10, LinesCovered: 5},    // crap 6
+		{Name: "mid", Complexity: 6, LinesTotal: 10, LinesCovered: 0},    // crap 42
+		{Name: "next", Complexity: 5, LinesTotal: 10, LinesCovered: 0},   // crap 30, truncated
 		{Name: "safe", Complexity: 1, LinesTotal: 10, LinesCovered: 10},  // crap 1
 	}
-	report := NewReport(fns, 30)
+	report := NewReport(fns, 29)
 
 	var buf bytes.Buffer
-	report.WriteTable(&buf, 2, false) // top=2, so "safe" should be truncated
+	report.WriteTable(&buf, 2, false) // top=2 shows both failing rows; the passing row is filtered
 	out := buf.String()
 
 	if !strings.Contains(out, "risky") || !strings.Contains(out, "mid") {
 		t.Errorf("expected the two worst functions in output, got:\n%s", out)
 	}
-	if strings.Contains(out, "safe") {
-		t.Errorf("expected 'safe' to be truncated out of top-2 output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "1 more function(s) not shown") {
+	if !strings.Contains(out, "1 more function(s) exceeding CRAP 29.0 not shown") {
 		t.Errorf("expected a truncation summary line, got:\n%s", out)
 	}
-	if !strings.Contains(out, "FAIL: at least one function exceeds CRAP 30.0") {
+	if strings.Contains(out, "safe") {
+		t.Errorf("passing function should not appear in a failing hotspot table, got:\n%s", out)
+	}
+	if !strings.Contains(out, "FAIL: at least one function exceeds CRAP 29.0") {
 		t.Errorf("expected a FAIL line, got:\n%s", out)
+	}
+	var jsonBuf bytes.Buffer
+	if err := report.WriteJSON(&jsonBuf); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	var decoded Report
+	if err := json.Unmarshal(jsonBuf.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode full failing report: %v", err)
+	}
+	if len(decoded.Functions) != len(fns) {
+		t.Errorf("full JSON report has %d functions, want all %d: %+v", len(decoded.Functions), len(fns), decoded.Functions)
 	}
 }
 
-func TestWriteTableTopZeroShowsAll(t *testing.T) {
+func TestWriteTableTopZeroShowsAllFailingFunctions(t *testing.T) {
 	fns := make([]Function, 30)
 	for i := range fns {
-		fns[i] = Function{Name: "f", Complexity: 1, LinesTotal: 1, LinesCovered: 1}
+		fns[i] = Function{Name: "f", Complexity: 6, LinesTotal: 1, LinesCovered: 0}
 	}
 	report := NewReport(fns, 30)
 
@@ -75,8 +101,8 @@ func TestWriteTableTopZeroShowsAll(t *testing.T) {
 	if strings.Contains(out, "more function(s) not shown") {
 		t.Errorf("top=0 should show every row untruncated, got:\n%s", out)
 	}
-	if got := strings.Count(out, "f "); got == 0 {
-		t.Errorf("expected function rows in output, got:\n%s", out)
+	if got := strings.Count(out, "f "); got != 30 {
+		t.Errorf("top=0 should show every failing function, got %d rows:\n%s", got, out)
 	}
 }
 
@@ -87,7 +113,7 @@ func TestWriteTableVerboseShowsUncoveredLines(t *testing.T) {
 			UncoveredLines: []LineRange{{Start: 12, End: 15}, {Start: 20, End: 20}},
 		},
 		{File: "a.go", Name: "clean", Complexity: 1, LinesTotal: 5, LinesCovered: 5},
-	}, 30)
+	}, 5)
 
 	var buf bytes.Buffer
 	report.WriteTable(&buf, 20, true)
@@ -107,7 +133,7 @@ func TestWriteTableNotVerboseHidesUncoveredLines(t *testing.T) {
 	report := NewReport([]Function{
 		{File: "a.go", Name: "risky", Complexity: 5, LinesTotal: 10, LinesCovered: 5,
 			UncoveredLines: []LineRange{{Start: 12, End: 15}}},
-	}, 30)
+	}, 5)
 
 	var buf bytes.Buffer
 	report.WriteTable(&buf, 20, false)

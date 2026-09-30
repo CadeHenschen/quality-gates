@@ -106,6 +106,9 @@ func TestWithSizeFailsReportAndPreservesCrapPass(t *testing.T) {
 	if !strings.Contains(out, "PASS: no function exceeds CRAP 30.0") {
 		t.Errorf("CRAP verdict line should still say PASS, got:\n%s", out)
 	}
+	if strings.Contains(out, "FUNCTION") || strings.Contains(out, "COMPLEXITY") {
+		t.Errorf("size-only failure should not print a passing CRAP hotspot table, got:\n%s", out)
+	}
 	if !strings.Contains(out, "FAIL: 1 size threshold violation(s)") {
 		t.Errorf("expected a size FAIL line, got:\n%s", out)
 	}
