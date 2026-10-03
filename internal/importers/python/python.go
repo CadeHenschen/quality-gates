@@ -2,7 +2,8 @@
 // extraction of import statements — no real parser needed, since Python's
 // import syntax is regular enough to match reliably, and the resolution
 // step (does this module correspond to a file we actually scanned) is
-// what does the real work, not the extraction.
+// what does the real work, not the extraction. Parenthesized from-import
+// lists are collected across physical lines before their names are resolved.
 //
 // Only imports that resolve to a file within the scanned directory become
 // graph edges; anything else (stdlib, third-party, unresolvable dynamic
@@ -27,6 +28,7 @@ type Importer struct{}
 var (
 	importRe     = regexp.MustCompile(`^\s*import\s+([\w.]+(?:\s*,\s*[\w.]+)*)`)
 	fromImportRe = regexp.MustCompile(`^\s*from\s+(\.*)([\w.]*)\s+import\s+(.+)`)
+	aliasRe      = regexp.MustCompile(`\s+as\s+`)
 )
 
 func (Importer) Import(opts importers.Options) (graph cycle.Graph, scanned int, retErr error) {
@@ -116,9 +118,21 @@ func resolveSourceImports(data []byte, file string, existing map[string]bool) ([
 		add(base + "/__init__.py")
 	}
 
-	for _, line := range strings.Split(string(data), "\n") {
+	lines := strings.Split(string(data), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if m := fromImportRe.FindStringSubmatch(line); m != nil {
 			dots, module, names := len(m[1]), m[2], m[3]
+			if initial := withoutPythonComment(names); parenthesizedImportIsOpen(initial) {
+				collected, end, ok := collectParenthesizedImportNames(lines, i, initial)
+				if !ok {
+					// Stay best-effort for malformed/incomplete source: don't
+					// resolve a partial import list or invent a syntax error.
+					break
+				}
+				names = collected
+				i = end
+			}
 			before := len(targets)
 
 			base := fileDir
@@ -147,6 +161,41 @@ func resolveSourceImports(data []byte, file string, existing map[string]bool) ([
 	return targets, unresolved, nil
 }
 
+// parenthesizedImportIsOpen reports whether an import-name fragment begins
+// a parenthesized list that continues onto a later physical line.
+func parenthesizedImportIsOpen(names string) bool {
+	return strings.Contains(names, "(") && parenthesisBalance(names) > 0
+}
+
+// collectParenthesizedImportNames joins a parenthesized from-import list
+// through its matching closing parenthesis. Import names cannot contain
+// string literals, so removing a Python comment at the first '#' keeps
+// parentheses in comments from changing the balance.
+func collectParenthesizedImportNames(lines []string, start int, initial string) (names string, end int, ok bool) {
+	parts := []string{initial}
+	depth := parenthesisBalance(initial)
+	for i := start + 1; i < len(lines); i++ {
+		part := withoutPythonComment(lines[i])
+		parts = append(parts, part)
+		depth += parenthesisBalance(part)
+		if depth <= 0 {
+			return strings.Join(parts, "\n"), i, true
+		}
+	}
+	return "", len(lines), false
+}
+
+func withoutPythonComment(line string) string {
+	if i := strings.IndexByte(line, '#'); i >= 0 {
+		return line[:i]
+	}
+	return line
+}
+
+func parenthesisBalance(text string) int {
+	return strings.Count(text, "(") - strings.Count(text, ")")
+}
+
 // joinModule builds a "/"-joined module path from a base directory (which
 // may be "" or "." for the scan root) and a dotted module string
 // (converted to "/"). relative controls whether an empty module leaves
@@ -168,17 +217,16 @@ func joinModule(base, dotted string, relative bool) string {
 }
 
 // splitNames parses the comma-separated names after "import" — dropping
-// "as alias", trailing parens/backslash continuations, and surrounding
-// whitespace. Doesn't handle multi-line parenthesized import lists (a
-// documented v1 limitation).
+// "as alias", parentheses/backslash continuations, and surrounding
+// whitespace. Multi-line parenthesized lists are joined before this runs.
 func splitNames(raw string) []string {
 	raw = strings.TrimRight(raw, "\\")
 	raw = strings.NewReplacer("(", "", ")", "").Replace(raw)
 	var names []string
 	for _, part := range strings.Split(raw, ",") {
 		part = strings.TrimSpace(part)
-		if idx := strings.Index(part, " as "); idx >= 0 {
-			part = part[:idx]
+		if aliasParts := aliasRe.Split(part, 2); len(aliasParts) == 2 {
+			part = aliasParts[0]
 		}
 		part = strings.TrimSpace(part)
 		if part != "" && part != "*" {

@@ -139,6 +139,14 @@ func TestRunAgainstPythonTestdataPassAndFail(t *testing.T) {
 	}
 	if len(decoded.Cycles) == 0 {
 		t.Error("expected at least one cycle in the JSON report (the fixture has a deliberate one)")
+	} else {
+		files := map[string]bool{}
+		for _, file := range decoded.Cycles[0].Files {
+			files[file] = true
+		}
+		if !files["pkg/a.py"] || !files["pkg/b.py"] {
+			t.Errorf("first cycle files = %v, want pkg/a.py and pkg/b.py", decoded.Cycles[0].Files)
+		}
 	}
 
 	stdout.Reset()

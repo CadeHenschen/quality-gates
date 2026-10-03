@@ -147,10 +147,11 @@ real suppression — check before assuming.
 Same reasoning as escape-metric: per-language import syntax is regular
 enough to extract without a real parser; the hard part is resolving a
 specifier to a scanned file, which needs care regardless of how the
-specifier was extracted. A future improvement (multi-line parenthesized
-Python import lists, tsconfig path aliases) should extend the existing
-resolver, not reach for a full parser unless accuracy actually needs
-one. Build any new resolution rule against a real fixture with a genuine
+specifier was extracted. The multi-line parenthesized Python import-list
+and tsconfig path-alias improvements extended the existing resolvers
+without a full parser; future improvements should follow that approach
+unless accuracy actually requires a parser. Build any new resolution rule
+against a real fixture with a genuine
 cycle (`testdata/cycle/{python,typescript}/pkg/{a,b}`), verified
 end-to-end, before writing the formal test — not by reasoning about the
 regex in the abstract. Python's resolver went through a real bug this

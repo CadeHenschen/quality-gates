@@ -265,7 +265,8 @@ common and isn't the kind of finding these gates are for.
 ### cycle-metric: import resolution
 
 Pure regex extraction, no parser: Python's `import`/`from` (absolute and
-relative) and TS/JS's `import`/`export`/`require` specifiers (relative
+relative, including multiline parenthesized `from ... import (...)` lists)
+and TS/JS's `import`/`export`/`require` specifiers (relative
 and configured TypeScript aliases from `tsconfig.json`'s `baseUrl` and
 `paths`; unmapped bare imports are treated as external). TypeScript alias
 resolution reads the `tsconfig.json` at `--dir`, accepts JSONC comments
