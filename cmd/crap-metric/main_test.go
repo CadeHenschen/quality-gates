@@ -170,6 +170,78 @@ func TestRunCheckMaxLineLengthFlag(t *testing.T) {
 	}
 }
 
+func TestRunCheckFileSizeGateIncludesFunctionlessFilesAndRatchetsThem(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/fixture\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	content := "package example\n\ntype Config struct {\n\tName string // " + strings.Repeat("x", 16) + "\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "types.go"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	changedPath := filepath.Join(t.TempDir(), "changed.txt")
+	writeChanged := func(file string) {
+		t.Helper()
+		if err := os.WriteFile(changedPath, []byte(file+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	args := []string{
+		"check", "--lang", "go", "--dir", dir, "--fail-above", "1000",
+		"--max-lines", "0", "--max-params", "0", "--max-nesting", "0",
+		"--max-file-lines", "2", "--max-line-length", "10", "--json", jsonPath,
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := run(args, &stdout, &stderr); code != 1 {
+		t.Fatalf("full-scan exit code = %d, want 1 (stderr: %s; stdout: %s)", code, stderr.String(), stdout.String())
+	}
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("read JSON report: %v", err)
+	}
+	var decoded struct {
+		Functions    []crap.Scored      `json:"functions"`
+		SizeFindings []crap.SizeFinding `json:"size_findings"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decode JSON report: %v", err)
+	}
+	if len(decoded.Functions) != 0 {
+		t.Errorf("functions = %d, want zero for type-only source", len(decoded.Functions))
+	}
+	kinds := map[string]bool{}
+	for _, finding := range decoded.SizeFindings {
+		kinds[finding.Kind] = true
+		if finding.File != "types.go" {
+			t.Errorf("functionless file finding = %+v, want types.go", finding)
+		}
+	}
+	if !kinds["file_lines"] || !kinds["file_line_length"] {
+		t.Errorf("size findings = %+v, want file_lines and file_line_length", decoded.SizeFindings)
+	}
+
+	// The full report still includes the source findings, while the exit code
+	// follows only the file selected by the changed-file list.
+	for _, tc := range []struct {
+		changed string
+		want    int
+	}{
+		{changed: "other.go", want: 0},
+		{changed: "types.go", want: 1},
+	} {
+		t.Run("only-files/"+tc.changed, func(t *testing.T) {
+			writeChanged(tc.changed)
+			testArgs := append(append([]string(nil), args...), "--only-files", changedPath)
+			var out, errOut bytes.Buffer
+			if code := run(testArgs, &out, &errOut); code != tc.want {
+				t.Fatalf("exit code = %d, want %d (stderr: %s; stdout: %s)", code, tc.want, errOut.String(), out.String())
+			}
+		})
+	}
+}
+
 func TestRunCheckMaxLineLengthWithPythonSubdirectory(t *testing.T) {
 	if _, err := exec.LookPath("radon"); err != nil {
 		t.Skip("radon not on PATH")

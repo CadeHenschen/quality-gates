@@ -73,7 +73,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	maxNesting := fs.Int("max-nesting", 5, "control-flow nesting depth above which the gate fails; <=0 disables")
 	maxFileLines := fs.Int("max-file-lines", 600, "file length (lines) above which the gate fails; <=0 disables")
 	maxLineLength := fs.Int("max-line-length", 320, "file's longest physical line (Unicode code points) above which the gate fails; <=0 disables")
-	onlyFilesPath := fs.String("only-files", "", "changed-file list; only functions in listed files fail the gate")
+	onlyFilesPath := fs.String("only-files", "", "changed-file list; functions and file-size checks in listed files fail the gate")
 	requireAnalysis := fs.Bool("require-analysis", false, "fail when eligible source files are not analyzed")
 	var excludes stringList
 	fs.Var(&excludes, "exclude", "glob of --dir-relative files to omit from analysis (repeatable; removes files from the report too)")
@@ -88,7 +88,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	fns, analyzedFiles, excluded, err := collectFunctions(*lang, *dir, *coverage, *excludeFile, excludes, stdout)
+	fns, fileSizes, analyzedFiles, excluded, err := collectFunctions(*lang, *dir, *coverage, *excludeFile, excludes, stdout)
 	if err != nil {
 		fmt.Fprintln(stderr, "crap-metric: analyze:", err)
 		return 2
@@ -101,7 +101,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 	// The full report (every function in --dir) is always what gets
 	// printed and written to --json — --only-files narrows the *gate*
 	// only, so nothing is hidden, just not blocking.
-	report := crap.NewReport(fns, *failAbove).WithSize(sizeThresholds)
+	report := crap.NewReport(fns, *failAbove).WithSize(sizeThresholds, fileSizes...)
 	if *requireAnalysis {
 		report, err = withCrapEvidence(report, *dir, *lang, analyzedFiles, excluded, nil)
 		if err != nil {
@@ -125,7 +125,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scoped := crap.NewReport(filterFunctions(fns, onlyFiles, *dir), *failAbove).WithSize(sizeThresholds)
+	scoped := crap.NewReport(filterFunctions(fns, onlyFiles, *dir), *failAbove).WithSize(sizeThresholds, filterFileSizes(fileSizes, onlyFiles, *dir)...)
 	if *requireAnalysis {
 		scoped, err = withCrapEvidence(scoped, *dir, *lang, analyzedFiles, excluded, onlyFiles)
 		if err != nil {

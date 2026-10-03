@@ -23,6 +23,26 @@ func TestMaxLineLengthCountsCodePointsAndReportsLine(t *testing.T) {
 	}
 }
 
+func TestPhysicalLineCount(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source string
+		want   int
+	}{
+		{name: "empty", source: "", want: 0},
+		{name: "unterminated", source: "one", want: 1},
+		{name: "terminated", source: "one\n", want: 1},
+		{name: "two lines", source: "one\ntwo", want: 2},
+		{name: "blank trailing line", source: "one\n\n", want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PhysicalLineCount([]byte(tc.source)); got != tc.want {
+				t.Errorf("PhysicalLineCount(%q) = %d, want %d", tc.source, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSizeFindingsFlagsEachThreshold(t *testing.T) {
 	fns := []Function{
 		{File: "a.go", Name: "long", StartLine: 1, EndLine: 100, FileLines: 50}, // 100 lines
@@ -34,7 +54,7 @@ func TestSizeFindingsFlagsEachThreshold(t *testing.T) {
 	}
 	th := SizeThresholds{MaxLines: 80, MaxParams: 6, MaxNesting: 4, MaxFileLines: 600, MaxLineLength: 150}
 
-	got := sizeFindings(fns, th)
+	got := sizeFindings(fns, nil, th)
 
 	kinds := map[string]int{}
 	for _, f := range got {
@@ -68,18 +88,33 @@ func TestSizeFindingsThresholdDisabledByZeroOrNegative(t *testing.T) {
 	fns := []Function{
 		{File: "a.go", Name: "huge", StartLine: 1, EndLine: 1000, ParamCount: 20, MaxNestingDepth: 20, FileLines: 5000, FileMaxLineLength: 500, FileMaxLineLengthLine: 1},
 	}
-	if got := sizeFindings(fns, SizeThresholds{}); len(got) != 0 {
+	if got := sizeFindings(fns, nil, SizeThresholds{}); len(got) != 0 {
 		t.Errorf("zero-value SizeThresholds should disable every check, got %v", got)
 	}
-	if got := sizeFindings(fns, SizeThresholds{MaxLines: -1, MaxParams: -1, MaxNesting: -1, MaxFileLines: -1, MaxLineLength: -1}); len(got) != 0 {
+	if got := sizeFindings(fns, nil, SizeThresholds{MaxLines: -1, MaxParams: -1, MaxNesting: -1, MaxFileLines: -1, MaxLineLength: -1}); len(got) != 0 {
 		t.Errorf("negative thresholds should disable every check, got %v", got)
 	}
 }
 
 func TestMaxLineLengthThresholdAllowsExactLimit(t *testing.T) {
 	fns := []Function{{File: "a.go", Name: "f", FileMaxLineLength: 150, FileMaxLineLengthLine: 4}}
-	if got := sizeFindings(fns, SizeThresholds{MaxLineLength: 150}); len(got) != 0 {
+	if got := sizeFindings(fns, nil, SizeThresholds{MaxLineLength: 150}); len(got) != 0 {
 		t.Errorf("a line exactly at the limit should pass, got %+v", got)
+	}
+}
+
+func TestSizeFindingsIncludesFunctionlessFiles(t *testing.T) {
+	got := sizeFindings(nil, []FileSize{{
+		File: "types.go", Lines: 601, MaxLineLength: 151, MaxLineLengthLine: 8,
+	}}, SizeThresholds{MaxFileLines: 600, MaxLineLength: 150})
+	if len(got) != 2 {
+		t.Fatalf("sizeFindings = %+v, want one finding for each file-wide threshold", got)
+	}
+	if got[0] != (SizeFinding{File: "types.go", Kind: "file_lines", Value: 601, Threshold: 600}) {
+		t.Errorf("line-count finding = %+v", got[0])
+	}
+	if got[1] != (SizeFinding{File: "types.go", StartLine: 8, Kind: "file_line_length", Value: 151, Threshold: 150}) {
+		t.Errorf("line-length finding = %+v", got[1])
 	}
 }
 

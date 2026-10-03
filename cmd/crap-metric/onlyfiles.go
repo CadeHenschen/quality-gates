@@ -15,3 +15,15 @@ func filterFunctions(fns []crap.Function, onlyFiles map[string]bool, dir string)
 	}
 	return out
 }
+
+// filterFileSizes keeps only file-level findings in changed files, including
+// files that have no functions to match through filterFunctions.
+func filterFileSizes(files []crap.FileSize, onlyFiles map[string]bool, dir string) []crap.FileSize {
+	out := make([]crap.FileSize, 0, len(files))
+	for _, file := range files {
+		if ratchet.MatchesInDir(file.File, onlyFiles, dir) {
+			out = append(out, file)
+		}
+	}
+	return out
+}

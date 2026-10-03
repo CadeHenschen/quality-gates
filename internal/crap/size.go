@@ -1,10 +1,20 @@
 package crap
 
 import (
+	"bytes"
 	"sort"
 	"strings"
 	"unicode/utf8"
 )
+
+// FileSize contains source-wide size measurements for one scanned file,
+// independent of whether that file contains any functions.
+type FileSize struct {
+	File              string `json:"file"`
+	Lines             int    `json:"lines"`
+	MaxLineLength     int    `json:"max_line_length"`
+	MaxLineLengthLine int    `json:"max_line_length_line"`
+}
 
 // MaxLineLength returns the longest physical line's length in Unicode code
 // points and its 1-based line number. Tabs count as one code point; CRLF's
@@ -20,6 +30,20 @@ func MaxLineLength(source []byte) (length, line int) {
 		}
 	}
 	return length, line
+}
+
+// PhysicalLineCount returns the number of source lines, counting a final
+// unterminated line and not counting the empty position after a trailing
+// newline. Empty input has zero lines.
+func PhysicalLineCount(source []byte) int {
+	if len(source) == 0 {
+		return 0
+	}
+	lines := bytes.Count(source, []byte{'\n'})
+	if source[len(source)-1] != '\n' {
+		lines++
+	}
+	return lines
 }
 
 // SizeThresholds are generous size/shape gates, orthogonal to CRAP's
@@ -56,25 +80,42 @@ type SizeFinding struct {
 	Threshold int    `json:"threshold"`
 }
 
-// sizeFindings checks every function in fns against th, returning one
-// finding per crossed per-function threshold plus one per over-long file.
-// A file's length is deduplicated to a single finding even though every
-// function in it carries the same stamped FileLines value.
-func sizeFindings(fns []Function, th SizeThresholds) []SizeFinding {
+// sizeFindings checks every function in fns and every scanned file against
+// th, returning one finding per crossed per-function threshold plus one
+// per over-limit file. The explicit file facts include source files that
+// have no functions.
+func sizeFindings(fns []Function, files []FileSize, th SizeThresholds) []SizeFinding {
 	var out []SizeFinding
-	seenFile := map[string]bool{}
-	seenLineLength := map[string]bool{}
+	fileByPath := make(map[string]FileSize, len(files)+len(fns))
+	explicit := make(map[string]bool, len(files))
+	for _, file := range files {
+		fileByPath[file.File] = file
+		explicit[file.File] = true
+	}
 	for _, f := range fns {
 		out = append(out, functionSizeFindings(f, th)...)
-		if th.MaxFileLines > 0 && f.FileLines > th.MaxFileLines && !seenFile[f.File] {
-			seenFile[f.File] = true
-			out = append(out, SizeFinding{File: f.File, Kind: "file_lines", Value: f.FileLines, Threshold: th.MaxFileLines})
+		if !explicit[f.File] {
+			// Retain compatibility with callers that supply only functions.
+			file := fileByPath[f.File]
+			file.File = f.File
+			if f.FileLines > file.Lines {
+				file.Lines = f.FileLines
+			}
+			if f.FileMaxLineLength > file.MaxLineLength {
+				file.MaxLineLength = f.FileMaxLineLength
+				file.MaxLineLengthLine = f.FileMaxLineLengthLine
+			}
+			fileByPath[f.File] = file
 		}
-		if th.MaxLineLength > 0 && f.FileMaxLineLength > th.MaxLineLength && !seenLineLength[f.File] {
-			seenLineLength[f.File] = true
+	}
+	for _, file := range fileByPath {
+		if th.MaxFileLines > 0 && file.Lines > th.MaxFileLines {
+			out = append(out, SizeFinding{File: file.File, Kind: "file_lines", Value: file.Lines, Threshold: th.MaxFileLines})
+		}
+		if th.MaxLineLength > 0 && file.MaxLineLength > th.MaxLineLength {
 			out = append(out, SizeFinding{
-				File: f.File, StartLine: f.FileMaxLineLengthLine,
-				Kind: "file_line_length", Value: f.FileMaxLineLength,
+				File: file.File, StartLine: file.MaxLineLengthLine,
+				Kind: "file_line_length", Value: file.MaxLineLength,
 				Threshold: th.MaxLineLength,
 			})
 		}

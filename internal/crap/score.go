@@ -44,10 +44,9 @@ type Function struct {
 	// per-language details of what that means for its grammar.
 	MaxNestingDepth int `json:"max_nesting_depth"`
 	// FileLines is the physical line count of the file this function
-	// lives in (same value for every function in that file). Stamped
-	// here, rather than tracked as a separate per-file report, to keep
-	// size metrics as "extra fields on crap.Function" per CLAUDE.md,
-	// mirroring escape-metric's LinesByFile in spirit but not shape.
+	// lives in (same value for every function in that file). Kept on the
+	// function for compatibility with analyzer output; file-wide size
+	// findings also use FileSize so files without functions are covered.
 	FileLines int `json:"file_lines"`
 	// FileMaxLineLength and FileMaxLineLengthLine identify the longest
 	// physical source line in this file, measured in Unicode code points.
@@ -159,14 +158,16 @@ func (r Report) crapFailed() bool {
 // the report if there are any. Kept apart from NewReport — mirroring
 // internal/mutation's WithMinMutants — so the CRAP score math stays a
 // single pass and a ratcheted (--only-files) report can apply its own
-// scoped size gate the same way.
-func (r Report) WithSize(th SizeThresholds) Report {
+// scoped size gate the same way. Optional file facts cover scanned files
+// with no functions; function-stamped file fields remain a compatibility
+// fallback for callers that don't provide them.
+func (r Report) WithSize(th SizeThresholds, files ...FileSize) Report {
 	fns := make([]Function, len(r.Functions))
 	for i, s := range r.Functions {
 		fns[i] = s.Function
 	}
 	r.SizeThresholds = th
-	r.SizeFindings = sizeFindings(fns, th)
+	r.SizeFindings = sizeFindings(fns, files, th)
 	if len(r.SizeFindings) > 0 {
 		r.Passed = false
 	}

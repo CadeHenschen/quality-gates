@@ -678,21 +678,18 @@ etc.'s own statement lists, never descending into a `FuncLit`), and the
 safe under-counting direction for a generous, egregious-cases-only gate
 either way.
 
-**File length is stamped onto every function in that file** (same
-`FileLines` value repeated), not tracked as a separate per-file report —
-keeps it as "extra fields on `crap.Function`" per the design above, and
-`sizeFindings` dedupes it back down to one finding per file. Known
-limitation, like other conservative coverage limits in these gates: a
-file with zero functions (an interface/type-only file, a config-like
-file with only top-level declarations) is invisible to the file-length
-gate, since there's no `crap.Function` to stamp it onto. Not worth a
-separate per-file walk in every one of four analyzers for what should be
-a rare case in practice.
+**File-wide size facts are tracked separately from functions** so files
+with no functions still receive `--max-file-lines` and
+`--max-line-length` checks. The CLI builds them from the analyzer's
+existing visited-file list in shared collection code, rather than adding
+per-file walks to each language analyzer. For files with functions, their
+existing `FileLines` value remains authoritative; file findings are still
+deduplicated to one per file and threshold.
 
-The maximum physical line length follows the same file-fact shape. It is
-measured in Unicode code points (tabs count as one), and its 1-based line
-number is retained for a useful finding location. The CLI default is 320;
-this repository's self-check uses 150 as its own readability policy.
+Maximum physical line length is measured in Unicode code points (tabs
+count as one), and its 1-based line number is retained for a useful
+finding location. The CLI default is 320; this repository's self-check
+uses 150 as its own readability policy.
 
 **Defaults were picked by running the gate against this repo's own real
 source, not guessed** — same discipline as dupe-metric's 18% self-check

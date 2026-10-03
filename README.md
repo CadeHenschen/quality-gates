@@ -208,13 +208,14 @@ while a 6-deep nested `if` scores *low* but is unreadable. Rather than a
 fifth tool, the same per-language parse that already walks each function
 for complexity also provides **function length** (derived from
 start/end line, no extra field), **parameter count**, the function's own
-**deepest control-flow nesting depth**, and its **file's physical line
-count** — all as extra fields on the same `crap.Function` every
-language analyzer already produces, gated independently of the CRAP
-score itself via `--max-lines`/`--max-params`/`--max-nesting`/
-`--max-file-lines`/`--max-line-length` (each `<= 0` disables that one
-check). The longest line is measured in Unicode code points, with a tab
-counting as one code point; findings identify its 1-based line number.
+**deepest control-flow nesting depth** — all as extra fields on the same
+`crap.Function` every language analyzer already produces. The file-wide
+`--max-file-lines` and `--max-line-length` checks use separate facts from
+each eligible source file visited by the analyzer, including files with no
+functions. All five checks are gated independently of the CRAP score
+(`<= 0` disables that check). The longest line is measured in Unicode code
+points, with a tab counting as one code point; findings identify its
+1-based line number.
 A function can fail on size alone with a low CRAP score, or vice versa — the two gates
 share the same report but are otherwise orthogonal (see `WriteTable`'s
 separate `PASS`/`FAIL` line for each).
