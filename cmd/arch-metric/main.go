@@ -162,7 +162,7 @@ func checkRatchet(scope ratchetScope, rulesPath string, violations []arch.Violat
 		return report.ExitCode()
 	}
 
-	scopedViolations := filterForRatchet(violations, scope.onlyFiles,
+	scopedViolations := filterForRatchet(violations, scope.onlyFiles, scope.dir,
 		func(v arch.Violation) string { return v.File },
 		func(v arch.Violation) string { return v.Import },
 	)
@@ -286,7 +286,7 @@ func stabilityBaseline(path string, failAbove, filesAnalyzed int, report arch.St
 }
 
 func stabilityRatchet(scope ratchetScope, violations []arch.StabilityViolation, stdout, stderr io.Writer) int {
-	scopedViolations := filterForRatchet(violations, scope.onlyFiles,
+	scopedViolations := filterForRatchet(violations, scope.onlyFiles, scope.dir,
 		func(v arch.StabilityViolation) string { return v.File },
 		func(v arch.StabilityViolation) string { return v.Import },
 	)
@@ -413,11 +413,11 @@ func loadRuleSet(rulesPath string) (arch.RuleSet, error) {
 // rules path uses and an explicit, cwd-relative --rules path. Either match is
 // enough to take the safe full-policy verdict.
 func ruleFileChanged(rulesPath, dir string, onlyFiles map[string]bool) bool {
-	rel, err := filepath.Rel(dir, rulesPath)
-	if err == nil && ratchet.Matches(rel, onlyFiles) {
-		return true
+	if filepath.IsAbs(rulesPath) {
+		return ratchet.MatchesPath(rulesPath, onlyFiles)
 	}
-	return !filepath.IsAbs(rulesPath) && ratchet.Matches(rulesPath, onlyFiles)
+	rel, err := filepath.Rel(dir, rulesPath)
+	return err == nil && ratchet.MatchesInDir(rel, onlyFiles, dir)
 }
 
 func importerFor(lang string) (importers.Importer, error) {

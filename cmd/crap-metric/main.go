@@ -125,7 +125,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scoped := crap.NewReport(filterFunctions(fns, onlyFiles), *failAbove).WithSize(sizeThresholds)
+	scoped := crap.NewReport(filterFunctions(fns, onlyFiles, *dir), *failAbove).WithSize(sizeThresholds)
 	if *requireAnalysis {
 		scoped, err = withCrapEvidence(scoped, *dir, *lang, analyzedFiles, excluded, onlyFiles)
 		if err != nil {

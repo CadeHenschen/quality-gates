@@ -204,7 +204,7 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	// A file list that *does* include the fixture: the ratcheted gate
 	// should also fail.
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("some/repo/root/testdata/dupe/golang/sample.go\n"), 0o644); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/dupe/golang/sample.go\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

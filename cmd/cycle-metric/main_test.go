@@ -184,7 +184,7 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	}
 
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("some/repo/root/testdata/cycle/python/pkg/a.py\n"), 0o644); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/cycle/python/pkg/a.py\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -15,17 +15,17 @@ import (
 // rare cases read over 100% — both sides' line counts are still summed
 // into the numerator (same as the unscoped report), just against a
 // smaller denominator. Documented, not treated as a bug — see README.
-func filterForRatchet(files []dupe.FileTokens, clones []dupe.Clone, onlyFiles map[string]bool) ([]dupe.FileTokens, []dupe.Clone) {
+func filterForRatchet(files []dupe.FileTokens, clones []dupe.Clone, onlyFiles map[string]bool, dir string) ([]dupe.FileTokens, []dupe.Clone) {
 	scopedFiles := make([]dupe.FileTokens, 0, len(files))
 	for _, f := range files {
-		if ratchet.Matches(f.File, onlyFiles) {
+		if ratchet.MatchesInDir(f.File, onlyFiles, dir) {
 			scopedFiles = append(scopedFiles, f)
 		}
 	}
 
 	scopedClones := make([]dupe.Clone, 0, len(clones))
 	for _, c := range clones {
-		if ratchet.Matches(c.FileA, onlyFiles) || ratchet.Matches(c.FileB, onlyFiles) {
+		if ratchet.MatchesInDir(c.FileA, onlyFiles, dir) || ratchet.MatchesInDir(c.FileB, onlyFiles, dir) {
 			scopedClones = append(scopedClones, c)
 		}
 	}

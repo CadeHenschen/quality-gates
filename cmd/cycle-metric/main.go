@@ -137,7 +137,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 }
 
 func cycleRatchet(scope ratchetScope, cycles []cycle.Cycle, stdout, stderr io.Writer) int {
-	scopedCycles := filterForRatchet(cycles, scope.onlyFiles)
+	scopedCycles := filterForRatchet(cycles, scope.onlyFiles, scope.dir)
 	scoped := cycle.NewReport(scope.filesAnalyzed, scopedCycles, scope.failAbove)
 	if scope.requireAnalysis {
 		analysis, err := evidence.CheckAll(scope.dir, scope.lang, scope.analyzedFiles, scope.onlyFiles)

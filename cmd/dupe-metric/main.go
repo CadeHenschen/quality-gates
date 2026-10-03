@@ -109,7 +109,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scopedFiles, scopedClones := filterForRatchet(files, clones, onlyFiles)
+	scopedFiles, scopedClones := filterForRatchet(files, clones, onlyFiles, *dir)
 	scoped := dupe.NewReport(scopedFiles, scopedClones, *failAbove)
 	if *requireAnalysis {
 		scoped, err = withDupeEvidence(scoped, files, *dir, *lang, onlyFiles)

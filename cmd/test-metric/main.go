@@ -177,7 +177,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 
 	// The full report above is what's printed and written; --only-files
 	// narrows the gate only, by re-analyzing just the touched files' tests.
-	touched := filterTests(tests, onlyFiles)
+	touched := filterTests(tests, onlyFiles, *dir)
 	touchedTests, touchedAsserts := testmetric.Counts(touched)
 	scoped := testmetric.NewReport(testmetric.Analyze(touched, opts), touchedTests, touchedAsserts, *failAbove)
 	if *requireAnalysis {
@@ -245,7 +245,7 @@ func runMutation(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scopedMutants := filterMutants(mutants, onlyFiles)
+	scopedMutants := filterMutants(mutants, onlyFiles, *dir)
 	scoped, scopeEvidence, err := scopedMutationReport(scopedMutants, mutationScopeOptions{
 		Dir: *dir, Lang: *lang, Changed: onlyFiles, FailBelow: *failBelow,
 		CoveredOnly: *coveredOnly, MinMutants: *minMutants, MinimumGraded: *minimumGraded,

@@ -196,7 +196,7 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	}
 
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("some/repo/root/testdata/arch/golang/domain/domain.go\n"), 0o644); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/arch/golang/domain/domain.go\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,7 +232,7 @@ func TestRunOnlyFilesMissingFile(t *testing.T) {
 func TestRunPolicyFileChangeUsesFullGate(t *testing.T) {
 	dir := t.TempDir()
 	changed := filepath.Join(dir, "changed.txt")
-	if err := os.WriteFile(changed, []byte("some/repo/root/testdata/arch/golang/.arch-metric-rules.json\n"), 0o644); err != nil {
+	if err := os.WriteFile(changed, []byte("testdata/arch/golang/.arch-metric-rules.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -472,7 +472,7 @@ func TestRunStabilityOnlyFilesRatchet(t *testing.T) {
 	}
 
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("some/repo/root/testdata/arch/golang-stability/stable/stable.go\n"), 0o644); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/arch/golang-stability/stable/stable.go\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

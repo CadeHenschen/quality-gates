@@ -146,7 +146,7 @@ func TestCheckRatchetScopesTheGateNotTheReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("pkg/sample_test.go\n"), 0o600); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/test/golang/sample_test.go\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

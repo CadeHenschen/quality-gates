@@ -14,9 +14,10 @@ func TestFilterFunctions(t *testing.T) {
 		{File: "pages/Foo.tsx", Name: "Foo"},
 		{File: "pages/Bar.tsx", Name: "Bar"},
 	}
-	set := map[string]bool{"app/src/pages/Foo.tsx": true}
+	dir := t.TempDir()
+	set := map[string]bool{"pages/Foo.tsx": true}
 
-	got := filterFunctions(fns, set)
+	got := filterFunctions(fns, set, dir)
 	if len(got) != 1 || got[0].Name != "Foo" {
 		t.Errorf("filterFunctions = %+v, want only Foo", got)
 	}

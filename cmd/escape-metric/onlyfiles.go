@@ -10,17 +10,17 @@ import (
 // files' own lines (from LinesByFile) — not the whole --dir's line count,
 // which would dilute a small change's hatches into an ineffectively tiny
 // rate.
-func filterForRatchet(result escape.Result, onlyFiles map[string]bool) ([]escape.Hatch, int) {
+func filterForRatchet(result escape.Result, onlyFiles map[string]bool, dir string) ([]escape.Hatch, int) {
 	var hatches []escape.Hatch
 	for _, h := range result.Hatches {
-		if ratchet.Matches(h.File, onlyFiles) {
+		if ratchet.MatchesInDir(h.File, onlyFiles, dir) {
 			hatches = append(hatches, h)
 		}
 	}
 
 	lines := 0
 	for file, count := range result.LinesByFile {
-		if ratchet.Matches(file, onlyFiles) {
+		if ratchet.MatchesInDir(file, onlyFiles, dir) {
 			lines += count
 		}
 	}

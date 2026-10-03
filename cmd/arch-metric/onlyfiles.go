@@ -11,10 +11,10 @@ import (
 // arch.StabilityViolation have identical File/Import semantics but
 // aren't otherwise related types — same reasoning as reportio's own
 // WriteJSON[T any]/ReadReport[T any].
-func filterForRatchet[T any](items []T, onlyFiles map[string]bool, file, imp func(T) string) []T {
+func filterForRatchet[T any](items []T, onlyFiles map[string]bool, dir string, file, imp func(T) string) []T {
 	var out []T
 	for _, v := range items {
-		if ratchet.Matches(file(v), onlyFiles) || ratchet.Matches(imp(v), onlyFiles) {
+		if ratchet.MatchesInDir(file(v), onlyFiles, dir) || ratchet.MatchesInDir(imp(v), onlyFiles, dir) {
 			out = append(out, v)
 		}
 	}

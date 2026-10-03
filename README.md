@@ -60,9 +60,12 @@ debt in files nobody touched no longer blocks the build; new or modified
 code is still held to the full bar.
 
 `internal/ratchet` implements the shared half (load the changed-file
-list, match a `--dir`-relative path against it by suffix, since the list
-is repo-root-relative and a tool doesn't know the repo root). Each CLI
-keeps its own tool-specific filtering on top — a `crap.Function` filters
+list and resolve report paths against the Git root before exact comparison
+with the repo-root-relative list). Without a Git root, a scan directory
+inside a Go module uses that module root; paths outside both are compared
+exactly relative to `--dir`. Mutation reports without `--dir` use
+repo-root-relative paths. Each CLI keeps its own
+tool-specific filtering on top — a `crap.Function` filters
 directly, a `dupe.Clone` counts as touched if *either* side matches, an
 `escape.Hatch`'s scoped rate needs its own touched-files-only line-count
 denominator (using the whole-repo total would dilute a small change's
@@ -75,20 +78,6 @@ check` re-analyzes just the touched files' tests, and `test-metric
 mutation` re-scores just the touched files' mutants (numerator and
 denominator both come from the mutant list, so there's no separate
 denominator to scope).
-
-**Known limitation**: the suffix match has no path-boundary awareness
-beyond "preceded by `/`" — it can't tell two files with the same leaf
-name apart if one is a real path-boundary suffix of the other. A changed
-file `web/src/index.ts` will match an item's `File: "index.ts"` even if
-that item actually came from a completely unrelated `admin/index.ts`.
-This is unlikely to matter for a distinctive filename, but a repo with
-many same-named leaves (`index.ts`, `__init__.py`, `utils.go` across
-several packages) should expect occasional false-positive ratchet
-inclusion — an untouched hotspot gating the build because some other,
-unrelated file with the same name was actually the one that changed. Not
-currently worth the complexity of resolving both sides to full
-repo-relative paths for what's, in practice, a rare and only-ever-extra
-(never missed) inclusion.
 
 In CI, the changed-file list itself comes from `ci-workflows`'
 `compute-changed-files` action (a `git diff` against the PR base or the

@@ -8,11 +8,11 @@ import (
 // filterForRatchet keeps a cycle if *any* file in it matches onlyFiles —
 // touching one file in an existing cycle is still this change's problem
 // to answer for, even if most of the cycle predates it.
-func filterForRatchet(cycles []cycle.Cycle, onlyFiles map[string]bool) []cycle.Cycle {
+func filterForRatchet(cycles []cycle.Cycle, onlyFiles map[string]bool, dir string) []cycle.Cycle {
 	var out []cycle.Cycle
 	for _, c := range cycles {
 		for _, f := range c.Files {
-			if ratchet.Matches(f, onlyFiles) {
+			if ratchet.MatchesInDir(f, onlyFiles, dir) {
 				out = append(out, c)
 				break
 			}

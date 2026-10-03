@@ -101,7 +101,7 @@ func runCheck(args []string, stdout, stderr io.Writer) int {
 		return report.ExitCode()
 	}
 
-	scopedHatches, scopedLines := filterForRatchet(result, onlyFiles)
+	scopedHatches, scopedLines := filterForRatchet(result, onlyFiles, *dir)
 	scoped := escape.NewReport(scopedHatches, scopedLines, *failAbove, forbiddenPatterns...)
 	if *requireAnalysis {
 		scoped, err = withEscapeEvidence(scoped, result, *dir, *lang, onlyFiles)

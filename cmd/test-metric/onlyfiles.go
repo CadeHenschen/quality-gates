@@ -10,10 +10,10 @@ import (
 // Findings are then recomputed from just these, rather than filtering the
 // full finding list, so the scoped assertion/test counts stay consistent
 // with the scoped findings.
-func filterTests(tests []testmetric.Test, onlyFiles map[string]bool) []testmetric.Test {
+func filterTests(tests []testmetric.Test, onlyFiles map[string]bool, dir string) []testmetric.Test {
 	var out []testmetric.Test
 	for _, t := range tests {
-		if ratchet.Matches(t.File, onlyFiles) {
+		if ratchet.MatchesInDir(t.File, onlyFiles, dir) {
 			out = append(out, t)
 		}
 	}
@@ -24,10 +24,10 @@ func filterTests(tests []testmetric.Test, onlyFiles map[string]bool) []testmetri
 // score's numerator and denominator both derive from the mutant list, so
 // unlike escape-metric's per-line rate there's no separate denominator to
 // scope down.
-func filterMutants(mutants []mutation.Mutant, onlyFiles map[string]bool) []mutation.Mutant {
+func filterMutants(mutants []mutation.Mutant, onlyFiles map[string]bool, dir string) []mutation.Mutant {
 	var out []mutation.Mutant
 	for _, m := range mutants {
-		if ratchet.Matches(m.File, onlyFiles) {
+		if ratchet.MatchesInDir(m.File, onlyFiles, dir) {
 			out = append(out, m)
 		}
 	}

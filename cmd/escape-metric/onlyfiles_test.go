@@ -20,7 +20,7 @@ func TestFilterForRatchet(t *testing.T) {
 	}
 	onlyFiles := map[string]bool{"a.go": true}
 
-	hatches, lines := filterForRatchet(result, onlyFiles)
+	hatches, lines := filterForRatchet(result, onlyFiles, t.TempDir())
 	if len(hatches) != 1 || hatches[0].File != "a.go" {
 		t.Errorf("hatches = %+v, want only a.go's", hatches)
 	}

@@ -6,10 +6,10 @@ import (
 )
 
 // filterFunctions keeps only the functions whose file matches onlyFiles.
-func filterFunctions(fns []crap.Function, onlyFiles map[string]bool) []crap.Function {
+func filterFunctions(fns []crap.Function, onlyFiles map[string]bool, dir string) []crap.Function {
 	out := make([]crap.Function, 0, len(fns))
 	for _, f := range fns {
-		if ratchet.Matches(f.File, onlyFiles) {
+		if ratchet.MatchesInDir(f.File, onlyFiles, dir) {
 			out = append(out, f)
 		}
 	}

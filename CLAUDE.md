@@ -42,17 +42,18 @@ primary report.
 
 ## A tool's per-item `File` field must be relative to `--dir`, always
 
-`internal/ratchet.Matches` does suffix matching against a changed-file
-list that's repo-root-relative. Every adapter (`analyzers`,
-`tokenizers`, `importers`) must resolve its own `File` values relative
-to `--dir` (`filepath.Rel`/`os.path.relpath`/`path.relative`), not
-whatever the raw walk produced — otherwise ratchet matching silently
-fails whenever `--dir` itself has `..` components. This was a real bug,
-independently, in both dupe-metric's tokenizers and escape-metric's
-`Scan` (found via a failing test using `--dir "../../testdata/..."`).
-`cycle-metric`'s importers got this right from day one *because* they
-were built after dupe-metric's and escape-metric's fixes existed to copy
-the pattern from. Any new adapter must keep doing this.
+`internal/ratchet` resolves each `File` value (which remains relative to
+`--dir`) against the Git root containing that directory, then compares
+the normalized repo-relative path exactly with the changed-file list.
+`internal/repopath` shares root discovery with evidence checks. If a Git
+root is unavailable, a scan inside a Go module uses that module root; paths
+outside Git and a Go module are compared exactly relative to `--dir`. Every
+adapter (`analyzers`, `tokenizers`, `importers`) must keep its `File`
+values relative to `--dir` (`filepath.Rel`/`os.path.relpath`/`path.relative`),
+not whatever the raw walk produced — otherwise matching fails whenever
+`--dir` itself has `..` components. Mutation reports without `--dir`
+already use repository-root-relative paths. Any new adapter must keep
+these path contracts.
 
 ## escape-metric's ratchet needs its own line-count denominator
 
@@ -388,7 +389,7 @@ statement to extract the way Python/TS have one, so file-level cycle
 detection would find nothing for a typical single-target app. Real cycles
 could only exist between separate SPM modules (`import OtherModule`),
 which would need `Package.swift`-level target-to-directory resolution —
-and `internal/ratchet`'s `--only-files` matching is suffix-based against
+and `internal/ratchet`'s `--only-files` matching is file-based against
 real file paths, so module-granularity graph nodes wouldn't plug into the
 existing ratchet mechanism without extending it. Decided not to build
 that for v1; `cmd/cycle-metric/main.go`'s `importerFor` returns an
@@ -681,7 +682,7 @@ either way.
 `FileLines` value repeated), not tracked as a separate per-file report —
 keeps it as "extra fields on `crap.Function`" per the design above, and
 `sizeFindings` dedupes it back down to one finding per file. Known
-limitation, same shape as the ratchet's suffix-match caveat above: a
+limitation, like other conservative coverage limits in these gates: a
 file with zero functions (an interface/type-only file, a config-like
 file with only top-level declarations) is invisible to the file-length
 gate, since there's no `crap.Function` to stamp it onto. Not worth a

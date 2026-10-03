@@ -31,23 +31,82 @@ func TestLoadFilesMissingFile(t *testing.T) {
 }
 
 func TestMatches(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	set := map[string]bool{"app/src/pages/Foo.tsx": true}
 
 	cases := []struct {
 		itemFile string
 		want     bool
 	}{
-		{"pages/Foo.tsx", true},         // --dir-relative suffix of the changed (repo-root-relative) path
 		{"app/src/pages/Foo.tsx", true}, // exact match
-		{"Foo.tsx", true},               // still a valid path-boundary suffix
+		{"Foo.tsx", false},              // suffixes do not identify a unique file
 		{"pages/Bar.tsx", false},
 		{"src/pages/Foo.tsx.bak", false}, // similar but not a real path-boundary suffix
 	}
 	for _, c := range cases {
-		got := Matches(c.itemFile, set)
+		got := MatchesInDir(c.itemFile, set, dir)
 		if got != c.want {
 			t.Errorf("Matches(%q) = %v, want %v", c.itemFile, got, c.want)
 		}
+	}
+}
+
+func TestMatchesInDirUsesExactRepositoryPaths(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "app", "src")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	changed := map[string]bool{"app/src/pages/Foo.tsx": true}
+	for _, tc := range []struct {
+		item string
+		want bool
+	}{
+		{"pages/Foo.tsx", true},
+		{"pages/nested/../Foo.tsx", true},
+		{"../src/pages/Foo.tsx", true},
+		{"../../other/src/pages/Foo.tsx", false},
+		{"pages/Foo.tsx.bak", false},
+	} {
+		if got := MatchesInDir(tc.item, changed, dir); got != tc.want {
+			t.Errorf("MatchesInDir(%q) = %v, want %v", tc.item, got, tc.want)
+		}
+	}
+}
+
+func TestMatchesInDirWithoutGitUsesExactDirRelativePaths(t *testing.T) {
+	dir := t.TempDir()
+	changed := map[string]bool{"src/Foo.go": true}
+	if !MatchesInDir("src/./Foo.go", changed, dir) {
+		t.Error("expected normalized exact path to match without a Git root")
+	}
+	if MatchesInDir("other/src/Foo.go", changed, dir) {
+		t.Error("unrelated same-suffix path matched without a Git root")
+	}
+}
+
+func TestMatchesPathResolvesAbsolutePathInArchiveModuleFromOutside(t *testing.T) {
+	moduleRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(moduleRoot, "go.mod"), []byte("module example.test/archive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := filepath.Join(moduleRoot, "config", "arch-rules.json")
+	if err := os.MkdirAll(filepath.Dir(policyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	changed := map[string]bool{"config/arch-rules.json": true}
+	if !MatchesPath(policyPath, changed) {
+		t.Errorf("MatchesPath(%q) = false, want exact archive-module path match", policyPath)
 	}
 }
 

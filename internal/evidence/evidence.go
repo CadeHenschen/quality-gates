@@ -4,6 +4,7 @@ package evidence
 
 import (
 	"fmt"
+	"git.roost-r.com/cadeh/quality-gates/internal/repopath"
 	"git.roost-r.com/cadeh/quality-gates/internal/reportio"
 	"os"
 	"path/filepath"
@@ -24,8 +25,8 @@ func Changed(dir, file string, changed map[string]bool) bool {
 	if err != nil {
 		return false
 	}
-	rel, err := filepath.Rel(findRoot(dir), abs)
-	return err == nil && changed[filepath.ToSlash(rel)]
+	rel, err := repopath.Relative(repopath.Root(dir), abs)
+	return err == nil && changed[rel]
 }
 
 // Eligible returns source or test files in dir, relative to dir. It uses
@@ -126,7 +127,7 @@ func CheckAll(dir, lang string, analyzed []string, changed map[string]bool) (Rep
 
 func checkFiles(dir, lang string, eligible, analyzed []string, changed map[string]bool) (Report, error) {
 	if changed != nil {
-		root := findRoot(dir)
+		root := repopath.Root(dir)
 		var scoped []string
 		for _, file := range eligible {
 			abs, err := filepath.Abs(filepath.Join(dir, file))
@@ -163,23 +164,4 @@ func checkFiles(dir, lang string, eligible, analyzed []string, changed map[strin
 		r.Reason = fmt.Sprintf("insufficient analysis: %d eligible file(s) were not analyzed", len(r.Missing))
 	}
 	return r, nil
-}
-
-func findRoot(dir string) string {
-	cur, err := filepath.Abs(dir)
-	if err != nil {
-		return dir
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(cur, ".git")); err == nil {
-			return cur
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
-		}
-		cur = parent
-	}
-	abs, _ := filepath.Abs(dir)
-	return abs
 }

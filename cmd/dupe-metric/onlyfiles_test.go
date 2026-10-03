@@ -21,7 +21,7 @@ func TestFilterForRatchet(t *testing.T) {
 	}
 	onlyFiles := map[string]bool{"a.ts": true} // only a.ts "changed"
 
-	scopedFiles, scopedClones := filterForRatchet(files, clones, onlyFiles)
+	scopedFiles, scopedClones := filterForRatchet(files, clones, onlyFiles, t.TempDir())
 
 	if len(scopedFiles) != 1 || scopedFiles[0].File != "a.ts" {
 		t.Errorf("scopedFiles = %+v, want only a.ts", scopedFiles)

@@ -246,7 +246,9 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	// every function and its own unscoped FAIL, since --only-files
 	// narrows the gate, not what's reported.
 	unrelated := filepath.Join(dir, "unrelated.txt")
-	if err := os.WriteFile(unrelated, []byte("some/other/file.go\n"), 0o644); err != nil {
+	// This path shares the same leaf name as the scanned sample.go. Exact
+	// root-relative matching must keep the unrelated hotspot out of scope.
+	if err := os.WriteFile(unrelated, []byte("testdata/escape/golang/sample.go\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -292,7 +294,7 @@ func TestRunOnlyFilesRatchet(t *testing.T) {
 	// ratcheted gate should also fail, since the touched file's functions
 	// are back in scope.
 	touched := filepath.Join(dir, "touched.txt")
-	if err := os.WriteFile(touched, []byte("some/repo/root/testdata/crap/golang/sample.go\n"), 0o644); err != nil {
+	if err := os.WriteFile(touched, []byte("testdata/crap/golang/sample.go\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

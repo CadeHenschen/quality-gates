@@ -96,7 +96,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	// The full report above is what's printed and written; --only-files
 	// narrows the gate only, by re-tallying just the touched files.
-	scoped := deadcode.NewReport(filterFindings(found, onlyFiles), *failAbove)
+	scoped := deadcode.NewReport(filterFindings(found, onlyFiles, *dir), *failAbove)
 	fmt.Fprintf(stdout, "\nratchet scope: %d dead symbol(s) in changed files\n", scoped.Count)
 	verdict := "PASS"
 	if !scoped.Passed {
@@ -119,10 +119,10 @@ func loadIgnore(path string) (deadcode.Ignore, error) {
 }
 
 // filterFindings narrows findings to those in files matching onlyFiles.
-func filterFindings(found []deadcode.Finding, onlyFiles map[string]bool) []deadcode.Finding {
+func filterFindings(found []deadcode.Finding, onlyFiles map[string]bool, dir string) []deadcode.Finding {
 	var out []deadcode.Finding
 	for _, f := range found {
-		if ratchet.Matches(f.File, onlyFiles) {
+		if ratchet.MatchesInDir(f.File, onlyFiles, dir) {
 			out = append(out, f)
 		}
 	}

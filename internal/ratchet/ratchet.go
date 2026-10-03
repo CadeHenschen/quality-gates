@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"git.roost-r.com/cadeh/quality-gates/internal/repopath"
 	"git.roost-r.com/cadeh/quality-gates/internal/safefile"
 )
 
@@ -31,28 +32,54 @@ func LoadFiles(path string) (map[string]bool, error) {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
-			set[filepath.ToSlash(line)] = true
+			set[filepath.ToSlash(filepath.Clean(line))] = true
 		}
 	}
 	return set, nil
 }
 
-// Matches reports whether itemFile — as recorded by a tool, relative to
-// --dir — corresponds to one of the changed paths in onlyFiles —
-// relative to the repo root, from `git diff --name-only`. The two are
-// relative to different roots (a tool doesn't know the repo root), so
-// matching is by path suffix on "/" boundaries rather than exact
-// equality: "app/src/pages/Foo.tsx" (changed, repo-root-relative)
-// matches item file "pages/Foo.tsx" (--dir-relative) because the former
-// ends with "/pages/Foo.tsx".
-func Matches(itemFile string, onlyFiles map[string]bool) bool {
-	item := filepath.ToSlash(itemFile)
-	for changed := range onlyFiles {
-		if changed == item || strings.HasSuffix(changed, "/"+item) {
-			return true
-		}
+// MatchesInDir compares a report path relative to dir with changed paths
+// relative to the repository root. If dir is outside Git, changed paths are
+// interpreted relative to dir. Both paths are canonicalized before exact
+// comparison, so a matching suffix in a different directory cannot match.
+func MatchesInDir(itemFile string, onlyFiles map[string]bool, dir string) bool {
+	if len(onlyFiles) == 0 {
+		return false
 	}
-	return false
+	root := repopath.Root(dir)
+	baseDir := dir
+	if dir == "" {
+		// Reports without --dir (notably mutation reports) commonly use
+		// repository-root-relative paths.
+		baseDir = root
+	}
+	base, err := filepath.Abs(baseDir)
+	if err != nil {
+		return false
+	}
+	item, err := repopath.Relative(root, filepath.Join(base, itemFile))
+	if err != nil {
+		return false
+	}
+	return onlyFiles[item]
+}
+
+// MatchesPath compares a path expressed from the current working directory
+// (or absolute) with repository-root-relative changed paths. It supports
+// policy files that live outside the source scan directory.
+func MatchesPath(path string, onlyFiles map[string]bool) bool {
+	if len(onlyFiles) == 0 {
+		return false
+	}
+	base := "."
+	if filepath.IsAbs(path) {
+		base = filepath.Dir(path)
+	} else {
+		path = filepath.Join(".", path)
+	}
+	root := repopath.Root(base)
+	rel, err := repopath.Relative(root, path)
+	return err == nil && onlyFiles[rel]
 }
 
 // Load wraps LoadFiles for a CLI's --only-files flag: path == "" means the

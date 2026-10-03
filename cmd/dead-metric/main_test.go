@@ -87,7 +87,7 @@ func TestIgnoreListRemovesFindingsFromReportAndGate(t *testing.T) {
 // The ratchet narrows the gate, never the report (see CLAUDE.md).
 func TestOnlyFilesNarrowsGateNotReport(t *testing.T) {
 	untouched := write(t, "changed.txt", "README.md\n")
-	code, out, _ := runCLI(t, "--report", goReport, "--only-files", untouched, "--json", "")
+	code, out, _ := runCLI(t, "--report", goReport, "--dir", "../../testdata/dead/golang", "--only-files", untouched, "--json", "")
 	if code != 0 {
 		t.Errorf("pre-existing dead code outside changed files must not fail the gate, got %d", code)
 	}
@@ -97,8 +97,8 @@ func TestOnlyFilesNarrowsGateNotReport(t *testing.T) {
 		}
 	}
 
-	touched := write(t, "changed.txt", "sub/dir/util/util.go\n")
-	code, out, _ = runCLI(t, "--report", goReport, "--only-files", touched, "--json", "")
+	touched := write(t, "changed.txt", "testdata/dead/golang/util/util.go\n")
+	code, out, _ = runCLI(t, "--report", goReport, "--dir", "../../testdata/dead/golang", "--only-files", touched, "--json", "")
 	if code != 1 || !strings.Contains(out, "ratchet scope: 2 dead symbol(s)") || !strings.Contains(out, "FAIL (ratcheted): 2 dead symbol(s), gate is 0") {
 		t.Errorf("touching a file with dead code must fail, got %d:\n%s", code, out)
 	}
