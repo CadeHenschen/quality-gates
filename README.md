@@ -138,10 +138,11 @@ The scoped verdict is printed separately, as with the existing ratchet.
 
 `cycle-metric` and `arch-metric` also report unresolved relative local
 imports as `unresolved_imports`; strict analysis fails when one is in
-scope. Bare package imports are external. TypeScript path aliases are not
-resolved yet and remain outside this check. Python `from . import name`
-can name either a module or a symbol, so an unresolved name in that form
-is not treated as a missing module.
+scope. Configured TypeScript path aliases that match but do not resolve to
+a scanned file are also reported as unresolved; strict analysis fails
+when one is in scope. Unmapped bare package imports are external. Python
+`from . import name` can name either a module or a symbol, so an unresolved
+name in that form is not treated as a missing module.
 
 ### crap-metric: per-language coverage input
 
@@ -275,12 +276,15 @@ common and isn't the kind of finding these gates are for.
 
 Pure regex extraction, no parser: Python's `import`/`from` (absolute and
 relative) and TS/JS's `import`/`export`/`require` specifiers (relative
-only — bare/aliased imports are treated as external). Both languages are
-scanned **with test files included**, unlike the other three tools — a
-cycle is a structural property of the whole import graph, and excluding
-tests could hide a real tangle. Every cycle's report includes both the
-full set of files involved and a reconstructed concrete `Chain` — a
-literal path back to its own start, not just an unordered set.
+and configured TypeScript aliases from `tsconfig.json`'s `baseUrl` and
+`paths`; unmapped bare imports are treated as external). TypeScript alias
+resolution reads the `tsconfig.json` at `--dir`, accepts JSONC comments
+and trailing commas, and does not follow `extends` or project references.
+Both languages are scanned **with test files included**, unlike the other
+three tools — a cycle is a structural property of the whole import graph,
+and excluding tests could hide a real tangle. Every cycle's report
+includes both the full set of files involved and a reconstructed concrete
+`Chain` — a literal path back to its own start, not just an unordered set.
 
 ### arch-metric: declared layer rules
 

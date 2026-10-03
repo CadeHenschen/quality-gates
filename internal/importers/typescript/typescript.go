@@ -4,11 +4,9 @@
 // string specifier is regular enough, and resolution (does this
 // specifier correspond to a scanned file) is where the real work is.
 //
-// Only *relative* specifiers ("./x", "../x") are resolved — bare imports
-// ("react") and path-alias imports ("@/lib/foo", needing tsconfig
-// path-mapping to resolve) are treated as external and dropped. This is
-// the overwhelming majority of same-package imports in practice, and the
-// ones most likely to form an accidental cycle; see README.
+// Relative specifiers ("./x", "../x") and configured tsconfig.json
+// `compilerOptions.paths` aliases are resolved. Unmapped bare imports
+// ("react") are treated as external and dropped.
 package typescript
 
 import (
@@ -42,6 +40,10 @@ func (Importer) Import(opts importers.Options) (graph cycle.Graph, scanned int, 
 	if err != nil {
 		return cycle.Graph{}, 0, err
 	}
+	paths, err := readPathMappings(root)
+	if err != nil {
+		return cycle.Graph{}, 0, err
+	}
 
 	existing := map[string]bool{}
 	for _, f := range files {
@@ -50,7 +52,7 @@ func (Importer) Import(opts importers.Options) (graph cycle.Graph, scanned int, 
 
 	graph = cycle.Graph{Edges: map[string][]string{}}
 	for _, f := range files {
-		targets, unresolved, err := resolveWithIssues(root, f, existing)
+		targets, unresolved, err := resolveWithIssues(root, f, existing, paths)
 		if err != nil {
 			return cycle.Graph{}, 0, err
 		}
@@ -90,7 +92,7 @@ func walkCode(dir string) ([]string, error) {
 	return files, err
 }
 
-func resolveWithIssues(root *os.Root, file string, existing map[string]bool) ([]string, []cycle.ImportIssue, error) {
+func resolveWithIssues(root *os.Root, file string, existing map[string]bool, paths pathMappings) ([]string, []cycle.ImportIssue, error) {
 	data, err := safefile.ReadFileAt(root, file)
 	if err != nil {
 		return nil, nil, err
@@ -103,17 +105,21 @@ func resolveWithIssues(root *os.Root, file string, existing map[string]bool) ([]
 
 	for _, m := range specifierRe.FindAllStringSubmatch(withoutComments(data), -1) {
 		spec := m[1]
-		if !strings.HasPrefix(spec, ".") {
-			continue // bare/aliased import — external, not resolved (see package doc)
+		var target string
+		if strings.HasPrefix(spec, ".") {
+			joined := spec
+			if fileDir != "." {
+				joined = fileDir + "/" + spec
+			}
+			joined = filepath.ToSlash(filepath.Clean(joined))
+			target = resolveModule(joined, existing)
+		} else {
+			var matched bool
+			target, matched = paths.resolve(spec, existing)
+			if !matched {
+				continue // unmapped bare imports are external packages
+			}
 		}
-
-		joined := spec
-		if fileDir != "." {
-			joined = fileDir + "/" + spec
-		}
-		joined = filepath.ToSlash(filepath.Clean(joined))
-
-		target := resolveModule(joined, existing)
 		if target == "" {
 			unresolved = append(unresolved, cycle.ImportIssue{File: file, Specifier: spec})
 			continue
@@ -188,6 +194,9 @@ func withoutComments(src []byte) string {
 // less) as: the exact path with each code extension, then as a directory
 // index file with each extension.
 func resolveModule(base string, existing map[string]bool) string {
+	if existing[base] {
+		return base
+	}
 	for _, ext := range codeExtensions {
 		if existing[base+ext] {
 			return base + ext
