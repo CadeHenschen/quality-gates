@@ -7,8 +7,9 @@ deliberately different, appropriately-scoped detection method — but they
 share enough (the `--only-files` ratchet mechanism, the CI/release
 plumbing, the install pattern) that running them as four separate repos
 meant four copies of that shared logic drifting independently. Migrated
-into one module for exactly that reason — see [CLAUDE.md](CLAUDE.md) for
-the incidents that motivated it.
+into one module for exactly that reason. This README describes the gates
+for teams adopting them; [CLAUDE.md](CLAUDE.md) records maintainer-facing
+implementation decisions and the incidents behind them.
 
 ## The seven gates
 
@@ -21,6 +22,71 @@ the incidents that motivated it.
 | `arch-metric` | Does this code violate a declared layer boundary? | `check`: resolves imports to packages, checks each edge against a small "X may not import Y" rules file. `stability`: gates on Martin's Stable Dependencies Principle from the same graph | `check --fail-above 0` (violations); `stability --fail-above 0` (violations) |
 | `dead-metric` | Is there code nothing uses? | Ingests `deadcode` (Go) / `knip` (TS/JS) / `vulture` (Python) / `periphery` (Swift) reports and gates on the count | `--fail-above 0` (dead symbols) |
 | `test-metric` | Can these tests actually fail? | `check`: parses test files for tests with no assertions, skips, `.only`, mock-only assertions, leaked temp dirs. `mutation`: gates on a mutation tool's score | `check --fail-above 0` (findings); `mutation --fail-below 60` (%) |
+
+### What the gates reinforce
+
+Each gate checks a different maintenance property. The metrics are useful
+signals for those properties, not complete proofs of software quality.
+
+| Gate | What passing reinforces | What a finding should prompt |
+|---|---|---|
+| `crap-metric` | Keep complex behavior covered by tests, and keep functions and files readable. The complexity/coverage score and size limits are separate checks. | Add or improve behavior tests, simplify a risky function, or split code that is too large or deeply nested. |
+| `dupe-metric` | Keep one authoritative implementation of repeated behavior so fixes do not need to be copied and versions do not drift. | Extract genuinely shared behavior; review boundary matches before refactoring because token matches can include adjacent code. |
+| `escape-metric` | Keep opt-outs from type checks, lint, and error handling visible and limited. | Remove the suppression or document why it is needed; use `--forbid-pattern` when a particular hatch must never be used. |
+| `cycle-metric` | Keep module dependencies understandable and avoid groups of modules that depend on one another in a loop. | Break the cycle by moving shared responsibilities or changing dependency direction. |
+| `arch-metric check` | Preserve declared ownership and dependency direction, such as keeping binaries independent from one another and internal packages independent from command entry points. | Change the import direction or revise the checked-in rule when the architecture decision itself has changed. |
+| `arch-metric stability` | Make dependencies point toward packages that are at least as stable, so volatile implementation details do not become dependencies of stable code. | Move the dependency behind a stable interface or reconsider which package owns the contract. |
+| `test-metric check` | Keep tests capable of producing a useful failure signal: they assert something, run, and are not silently focused, skipped, or marked as expected failures. | Restore the test to the normal run and assert the behavior or resulting state that matters. Static checks cannot decide whether an assertion is meaningful. |
+| `test-metric mutation` | Check that tests detect small changes in behavior, not just that code ran or assertion syntax appeared. | Add tests that fail for the surviving mutants. Mutation score is evidence about the mutations generated, not a guarantee against every bug. |
+| `dead-metric` | Keep the production surface area limited to code with a production use, reducing maintenance and cognitive load. | Delete unused code and its tests, or add a documented ignore entry for legitimate dynamic or external entry points. |
+
+Zero-finding defaults for cycles, architecture violations, dead symbols, and
+static test findings express a zero-tolerance policy for those structural
+problems. CRAP score, duplication, escape rate, and mutation score use numeric
+defaults because they are continuous or rate-based signals. Their defaults
+are starting policy values, not universal targets calibrated for every
+repository; tune them against a real report and keep the reason for any
+repository-specific override beside the CI command. More specifically,
+`crap-metric`'s score limit of 30 caps the combined complexity/coverage risk
+score; `dupe-metric`'s 5% is a repository-wide duplication ceiling;
+`escape-metric`'s rate of 1 per 1,000 lines limits suppression density while
+`--forbid-pattern` provides a zero-use policy for named hatches; and
+`test-metric mutation`'s 60% is a minimum share of graded mutants that tests
+must kill or time out. The repository documents empirical derivations for
+some local thresholds (including its 18% duplication self-check), but not
+for these general defaults, so treat them as starting values and record any
+calibration when adopting them. The 80-line, 6-parameter,
+5-level nesting, 600-line file, and line-length defaults are intentionally
+generous readability limits; their selection and this repository's stricter
+150-character self-check are explained below.
+
+### Recommended CI behavior
+
+For source-scanning gates, use `--require-analysis` in CI once the command is
+configured for the repository's language and source directory. It makes a
+green result mean the analyzer actually visited eligible files, rather than
+passing because a path, language, or scanner setup produced no findings. With
+`--only-files`, documentation-only changes remain not applicable; eligible
+changed source files that were not analyzed fail the evidence check. For
+example:
+
+```sh
+crap-metric check --lang go --dir ./service --coverage cover.out \
+  --only-files changed-files.txt --require-analysis
+cycle-metric check --lang ts --dir ./app \
+  --only-files changed-files.txt --require-analysis
+test-metric check --lang python --dir ./service \
+  --only-files changed-files.txt --require-analysis
+```
+
+The analyzer commands inspect source; `test-metric mutation` and
+`dead-metric` consume reports produced by other tools. Generate those reports
+for the current checkout in the same CI run. For mutation CI, set
+`--minimum-graded 1` (or a higher project-specific floor) so an empty or
+ungraded report cannot pass only because it has no surviving mutants. The
+CLI's default of zero preserves direct-use compatibility; it is not an
+evidence requirement. See the mutation section for how the strict floor
+interacts with changed-file analysis.
 
 The first four support `python` and `ts`/`typescript`/`js`; `crap-metric`,
 `dupe-metric`, and `escape-metric` also support `go` and `swift`.
@@ -92,8 +158,8 @@ crap-metric   diff  --old PATH --new PATH [--top N] [--json]
 dupe-metric   check --lang <python|go|ts|swift> --dir <dir> [--min-tokens N] [--fail-above PCT] [--require-analysis] [--only-files PATH] [--json PATH]
 escape-metric check --lang <python|go|ts|swift> --dir <dir> [--fail-above RATE] [--forbid-pattern NAME]... [--require-analysis] [--only-files PATH] [--json PATH]
 cycle-metric  check --lang <python|ts> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
-arch-metric   check --lang <python|ts|go> --dir <dir> [--rules PATH] [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
-arch-metric   stability --lang <python|ts|go> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
+arch-metric   check --lang <python|ts|js|go> --dir <dir> [--rules PATH] [--fail-above N] [--require-analysis] [--only-files PATH] [--json PATH]
+arch-metric   stability --lang <python|ts|js|go> --dir <dir> [--fail-above N] [--require-analysis] [--only-files PATH | --baseline PATH] [--json PATH]
 arch-metric   diff  --old PATH --new PATH [--top N] [--json]
 test-metric   check --lang <go|python|ts|swift> --dir <dir> [--fail-above N] [--min-assertions N] [--ignore KIND,...] [--include KIND,...] [--require-analysis] [--only-files PATH] [--json PATH]
 test-metric   mutation --report PATH [--dir <dir>] [--lang <go|python|ts|swift>] [--fail-below PCT] [--covered-only] [--min-mutants N] [--minimum-graded N] [--only-files PATH] [--json PATH]
@@ -489,7 +555,12 @@ The format is auto-detected. Score = `(killed + timeout) / (killed + timeout
 + survived + no-coverage)`; mutants with no verdict (compile errors, not
 viable, skipped) are left out. `--covered-only` also leaves out
 never-executed mutants so the score measures assertion strength alone —
-line coverage is crap-metric's job. `--fail-below` defaults to `60`.
+line coverage is crap-metric's job. `--fail-below` defaults to `60`. This is
+a baseline floor intended to make the gate catch a weak suite without
+presenting mutation score as a universal quality target. Calibrate it against
+the project's mutation run and generated mutants, and raise it as the suite
+improves. The default does not establish that a report contains enough
+evidence; use `--minimum-graded` for that.
 `--min-mutants N` (default `0`, always enforce) waives the gate when fewer than
 `N` mutants were graded — a score over a handful of mutants is noise (one
 survivor among 3 is 67%), so it passes with a note instead of failing on chance;

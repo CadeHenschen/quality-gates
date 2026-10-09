@@ -11,9 +11,9 @@ jobs:
     name: Build, vet, test
     runs-on: [self-hosted, roost-r]
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
-      # actions/checkout is a Node-based action; golang:1.26-alpine has no
+      # actions/checkout is a Node-based action; golang:1.26.9-alpine has no
       # Node.js by default. Same workaround as this module's four
       # predecessor repos' CI (and gamectl's). gcc/musl-dev are here for
       # `go test -race` below: cgo needs a real C compiler, which the
@@ -90,7 +90,7 @@ jobs:
     name: Lint
     runs-on: [self-hosted, roost-r]
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
       # curl is needed by install-golangci-lint's own download step, not
       # just checkout — the alpine base image has neither by default.
@@ -111,7 +111,7 @@ jobs:
     name: Static analysis (security)
     runs-on: [self-hosted, roost-r]
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
       - name: Install Node (required by actions/checkout)
         run: apk add --no-cache nodejs
@@ -142,7 +142,7 @@ jobs:
     needs: [test, lint, static-analysis, lint-workflows]
     if: github.ref == 'refs/heads/main'
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
       - name: Install Node (checkout) and curl (release API calls)
         run: apk add --no-cache nodejs curl
@@ -268,7 +268,7 @@ jobs:
     runs-on: [self-hosted, roost-r]
     if: github.event_name == 'pull_request'
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
       - name: Install Node (checkout), Python (radon)
         run: apk add --no-cache nodejs npm python3 py3-pip
@@ -374,7 +374,7 @@ jobs:
     needs: [release]
     if: github.ref == 'refs/heads/main'
     container:
-      image: golang:1.26-alpine
+      image: golang:1.26.9-alpine
     steps:
       # git + bash: git to read/advance the `reports` branch below (this
       # job's git plumbing is written for sh, but roost-r-git-auth's own
