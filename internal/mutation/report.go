@@ -11,9 +11,11 @@ import (
 // Report is a mutation-score verdict over a set of mutants.
 type Report struct {
 	Mutants []Mutant `json:"mutants"`
-	// Detected counts Killed + Timeout; Survived and NoCoverage are the
-	// misses; Ignored mutants (no verdict) are in Mutants but in no count.
+	// Detected counts Killed + Crash + Timeout; Survived and NoCoverage are the
+	// misses; Unviable and Ignored mutants have no verdict and are in no count.
 	Detected   int `json:"detected"`
+	Crashed    int `json:"crashed"`
+	Unviable   int `json:"unviable"`
 	Survived   int `json:"survived"`
 	NoCoverage int `json:"no_coverage"`
 	// Score is Detected / (Detected + Survived + NoCoverage), as a
@@ -46,12 +48,17 @@ func NewReport(mutants []Mutant, failBelow float64, coveredOnly bool) Report {
 	r := Report{Mutants: mutants, FailBelow: failBelow, CoveredOnly: coveredOnly}
 	for _, m := range mutants {
 		switch m.Status {
-		case Killed, Timeout:
+		case Killed, Crashed, Timeout:
 			r.Detected++
+			if m.Status == Crashed {
+				r.Crashed++
+			}
 		case Survived:
 			r.Survived++
 		case NoCoverage:
 			r.NoCoverage++
+		case Unviable:
+			r.Unviable++
 		}
 	}
 	denom := r.Detected + r.Survived

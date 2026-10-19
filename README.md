@@ -546,14 +546,20 @@ gates on the score:
 - **Go**: [go-gremlins](https://github.com/go-gremlins/gremlins) — `gremlins unleash --output gremlins.json`
 - **TypeScript/JS**: [Stryker](https://stryker-mutator.io) — its
   `mutation.json` (`--reporters json`; the mutation-testing-elements schema)
-- **Python / Swift / anything else**: a generic
+- **Swift**:
+  [swift-mutation-testing](https://github.com/ericodx/swift-mutation-testing)
+  — its Stryker-compatible JSON report
+- **Python / anything else**: a generic
   `{"mutants":[{"file","line","mutator","status"}]}` file, `status` one of
-  `killed|timeout|survived|no_coverage|ignored`, so a small converter over
-  mutmut/muter output feeds the same gate
+  `killed|crashed|timeout|survived|no_coverage|unviable|ignored`, so a small
+  converter over mutmut/muter output feeds the same gate
 
-The format is auto-detected. Score = `(killed + timeout) / (killed + timeout
-+ survived + no-coverage)`; mutants with no verdict (compile errors, not
-viable, skipped) are left out. `--covered-only` also leaves out
+The format is auto-detected. Score =
+`(killed + crashed + timeout) / (killed + crashed + timeout + survived + no-coverage)`;
+mutants with no verdict (compile errors, unviable,
+skipped) are left out. Crash is counted as detected because the mutant caused
+an observable test-process failure; unviable is kept distinct in the report
+but excluded from the score. `--covered-only` also leaves out
 never-executed mutants so the score measures assertion strength alone —
 line coverage is crap-metric's job. `--fail-below` defaults to `60`. This is
 a baseline floor intended to make the gate catch a weak suite without

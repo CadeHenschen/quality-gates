@@ -38,6 +38,35 @@ func TestParseStryker(t *testing.T) {
 	}
 }
 
+func TestParseSwiftMutationTestingStatuses(t *testing.T) {
+	data := []byte(`{"files":{"Sources/Engine.swift":{"mutants":[
+		{"mutatorName":"M","status":"Unviable","location":{"start":{"line":1}}},
+		{"mutatorName":"M","status":"Crash","location":{"start":{"line":2}}},
+		{"mutatorName":"M","status":"Killed","location":{"start":{"line":3}}},
+		{"mutatorName":"M","status":"Survived","location":{"start":{"line":4}}},
+		{"mutatorName":"M","status":"NoCoverage","location":{"start":{"line":5}}}
+	]}}}`)
+	mutants, err := Parse(data, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int]Status{1: Unviable, 2: Crashed, 3: Killed, 4: Survived, 5: NoCoverage}
+	for _, m := range mutants {
+		if got := want[m.Line]; m.Status != got {
+			t.Errorf("line %d status = %q, want %q", m.Line, m.Status, got)
+		}
+	}
+	if len(mutants) != len(want) {
+		t.Fatalf("parsed %d mutants, want %d", len(mutants), len(want))
+	}
+
+	r := NewReport(mutants, 60, false)
+	if r.Detected != 2 || r.Crashed != 1 || r.Unviable != 1 || r.Survived != 1 || r.NoCoverage != 1 || r.Graded != 4 {
+		t.Errorf("report counts = detected:%d crashed:%d unviable:%d survived:%d no_coverage:%d graded:%d",
+			r.Detected, r.Crashed, r.Unviable, r.Survived, r.NoCoverage, r.Graded)
+	}
+}
+
 func TestParseStrykerRecordsFileLineAndMutator(t *testing.T) {
 	for _, m := range parseFixture(t, "stryker.json", Options{}) {
 		if m.Status == Survived {
@@ -123,7 +152,11 @@ func TestNoVerdictMutantsScoreFull(t *testing.T) {
 }
 
 func TestMinimumGradedRequiresEvidence(t *testing.T) {
-	for _, mutants := range [][]Mutant{nil, {{File: "a.go", Status: Ignored}}} {
+	for _, mutants := range [][]Mutant{
+		nil,
+		{{File: "a.go", Status: Ignored}},
+		{{File: "a.swift", Status: Unviable}},
+	} {
 		r := NewReport(mutants, 60, false).WithMinimumGraded(1)
 		if r.Passed || !r.InsufficientEvidence || r.Graded != 0 {
 			t.Errorf("missing evidence should fail: %+v", r)

@@ -7,11 +7,12 @@
 // Like crap-metric with coverage, this package does *not* run the mutation
 // tool: mutating and re-running a suite is slow, language-specific, and
 // already done well by tools the target repo runs in its own CI
-// (go-gremlins for Go, Stryker for TS/JS). It parses their JSON reports
-// into one normalized model and gates on the score, with the same
-// --only-files ratchet as every other tool here. Python and Swift have no
-// stable JSON report of their own; the generic format (see Parse) exists so
-// a one-line converter over mutmut/muter output can feed the same gate.
+// (go-gremlins for Go, Stryker for TS/JS, swift-mutation-testing for Swift).
+// It parses their JSON reports into one normalized model and gates on the
+// score, with the same
+// --only-files ratchet as every other tool here. The generic format (see
+// Parse) exists so a small converter over tools without compatible JSON can
+// feed the same gate.
 package mutation
 
 import (
@@ -26,10 +27,12 @@ type Status string
 
 const (
 	Killed     Status = "killed"      // a test failed: the bug was caught
+	Crashed    Status = "crashed"     // the mutant caused the test process to crash
 	Timeout    Status = "timeout"     // suite hung on the mutant: counted as caught
 	Survived   Status = "survived"    // every test still passed: the bug was missed
 	NoCoverage Status = "no_coverage" // no test ever executed the mutated line
-	Ignored    Status = "ignored"     // didn't compile, not viable, skipped: no verdict
+	Unviable   Status = "unviable"    // the mutation could not be built/applied
+	Ignored    Status = "ignored"     // source format reported no verdict without a more specific status
 )
 
 // Mutant is one injected bug and what the suite did about it.
@@ -48,10 +51,11 @@ type Options struct {
 }
 
 // Parse reads a mutation report and detects its format: a Stryker
-// mutation-testing-elements JSON (`files` is an object), a go-gremlins
-// `--output` JSON (`files` is an array), or the generic
-// `{"mutants":[{"file","line","mutator","status"}]}` shape where status is
-// one of killed|timeout|survived|no_coverage|ignored.
+// mutation-testing-elements JSON (`files` is an object; also used by
+// swift-mutation-testing), a go-gremlins `--output` JSON (`files` is an
+// array), or the generic `{"mutants":[{"file","line","mutator","status"}]}`
+// shape where status is one of killed|crashed|timeout|survived|no_coverage|
+// unviable|ignored.
 func Parse(data []byte, opts Options) ([]Mutant, error) {
 	var probe struct {
 		Files   json.RawMessage `json:"files"`
@@ -108,7 +112,7 @@ func parseGeneric(raw json.RawMessage) ([]Mutant, error) {
 	for _, m := range in {
 		s := Status(strings.ToLower(m.Status))
 		switch s {
-		case Killed, Timeout, Survived, NoCoverage, Ignored:
+		case Killed, Crashed, Timeout, Survived, NoCoverage, Unviable, Ignored:
 		default:
 			return nil, fmt.Errorf("generic mutation report: unknown status %q for %s:%d", m.Status, m.File, m.Line)
 		}
@@ -141,18 +145,23 @@ func parseStryker(raw json.RawMessage) ([]Mutant, error) {
 	return out, nil
 }
 
-// strykerStatus maps Stryker's status names; CompileError, RuntimeError,
-// Ignored, and Pending all mean the mutant produced no verdict.
+// strykerStatus maps Stryker and swift-mutation-testing status names.
+// Unviable mutations have no verdict, while Crash is a detected mutation:
+// the mutant caused an observable failure in the test process.
 func strykerStatus(s string) Status {
 	switch s {
 	case "Killed":
 		return Killed
+	case "Crash":
+		return Crashed
 	case "Timeout":
 		return Timeout
 	case "Survived":
 		return Survived
 	case "NoCoverage":
 		return NoCoverage
+	case "Unviable":
+		return Unviable
 	}
 	return Ignored
 }
