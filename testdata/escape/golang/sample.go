@@ -7,7 +7,7 @@ func Clean(x int) int {
 }
 
 func WithNolint(x int) int {
-	y := x / 0 //nolint
+	y := x //nolint
 	return y
 }
 

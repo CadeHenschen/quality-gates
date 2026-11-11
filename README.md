@@ -715,8 +715,9 @@ every push and PR; on `main`, it also builds all seven `linux/amd64` and
 `darwin/arm64` binaries (the latter for the mac-mini runner), each with
 `-ldflags "-X main.version=<short-sha>"` baked in, and publishes them to
 **one** Forgejo release tagged with that same short commit SHA — pure
-distribution, no report data attached, so the release job also prunes
-releases down to the newest 20 after each push. It then self-checks
+distribution, with a `SHA256SUMS` manifest covering all 14 platform binaries
+and no report data attached, so the release job also prunes releases down to
+the newest 20 after each push. It then self-checks
 crap-metric/dupe-metric/escape-metric/arch-metric/test-metric/dead-metric
 against the repo's own (now much larger, all-seven-tools) Go source —
 cycle-metric still can't self-check, being Go-only in implementation but
@@ -730,9 +731,9 @@ advanced on) a dedicated `reports` branch — one commit per run,
 `crap-report.json` only — rather than a release asset.
 
 Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
-`install-quality-gates` action, which installs all seven release binaries;
-that action's optional `version` input pins to a specific release tag instead
-of always floating on `latest`.
+`install-quality-gates` action, which installs all seven release binaries
+and verifies each download against `SHA256SUMS`; its optional `version` input
+pins to a specific release tag instead of always floating on `latest`.
 
 ## Development
 

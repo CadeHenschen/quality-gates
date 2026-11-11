@@ -183,13 +183,17 @@ jobs:
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o test-metric-darwin-arm64    ./cmd/test-metric
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dead-metric-darwin-arm64    ./cmd/dead-metric
 
+      - name: Generate binary checksums
+        run: sha256sum -- *-linux-amd64 *-darwin-arm64 > SHA256SUMS
+
       - name: Create release and upload binaries
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ github.sha }}
         # One release per push, tagged with the short commit SHA, carrying
-        # all four binaries (previously four separate per-tool releases
-        # across four repos). Same conventions as those repos' CI, carried
+        # all 14 platform binaries plus their checksum manifest (previously
+        # four separate per-tool releases across four repos). Same conventions
+        # as those repos' CI, carried
         # forward: github.sha instead of `git rev-parse` (no git in this
         # container — checkout@v4 falls back to a tarball download without
         # it); the `^{"id":` anchor on the sed extract (a bare greedy
@@ -217,13 +221,56 @@ jobs:
             fi
           fi
 
+          ASSET_LIST=/tmp/quality-gates-release-assets.json
+          UPLOADED_ASSETS=/tmp/quality-gates-release-assets-uploaded.txt
+          : > "$UPLOADED_ASSETS"
+          if curl --fail --silent --show-error --location \
+            --retry 4 --retry-delay 1 --retry-max-time 120 --retry-connrefused \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: token $TOKEN" \
+            --output "$ASSET_LIST" \
+            "$API/releases/$ID/assets?limit=100"; then
+            :
+          else
+            CURL_STATUS=$?
+            echo "failed to list assets for release '$TAG' (curl exit code $CURL_STATUS)" >&2
+            exit "$CURL_STATUS"
+          fi
+
+          upload_asset() {
+            ASSET_NAME=$1
+            if grep -Eq "\"name\"[[:space:]]*:[[:space:]]*\"$ASSET_NAME\"" "$ASSET_LIST" || \
+              grep -Fqx "$ASSET_NAME" "$UPLOADED_ASSETS"; then
+              echo "release asset $ASSET_NAME already exists; skipping"
+              return 0
+            fi
+            # Do not retry POST automatically: a timed-out upload may already
+            # have reached Forgejo. The next workflow attempt lists assets and
+            # skips completed uploads, while still uploading missing files.
+            if curl --fail --silent --show-error --connect-timeout 10 --max-time 120 \
+              -X POST -H "Authorization: token $TOKEN" \
+              -F "attachment=@${ASSET_NAME}" \
+              --output /dev/null \
+              "$API/releases/$ID/assets?name=${ASSET_NAME}"; then
+              printf '%s\n' "$ASSET_NAME" >> "$UPLOADED_ASSETS"
+            else
+              CURL_STATUS=$?
+              echo "failed to publish release asset '$ASSET_NAME' for tag '$TAG' (curl exit code $CURL_STATUS)" >&2
+              return "$CURL_STATUS"
+            fi
+          }
+
           for BIN in crap-metric dupe-metric escape-metric cycle-metric arch-metric test-metric dead-metric; do
             for PLATFORM in linux-amd64 darwin-arm64; do
-              curl -sS -X POST -H "Authorization: token $TOKEN" \
-                -F "attachment=@${BIN}-${PLATFORM}" \
-                "$API/releases/$ID/assets?name=${BIN}-${PLATFORM}"
+              upload_asset "${BIN}-${PLATFORM}" || exit $?
             done
           done
+
+          # Forgejo's release API does not expose an asset digest, so publish
+          # the build-produced manifest beside the binaries. The installer
+          # requires this file and verifies every requested asset before it
+          # moves any binary into ~/.local/bin.
+          upload_asset SHA256SUMS || exit $?
 
       - name: Delete releases beyond retention (keep newest 20)
         env:
