@@ -207,13 +207,54 @@ jobs:
           TAG=${SHA:0:7}
           API="https://git.roost-r.com/api/v1/repos/cadeh/quality-gates"
 
-          ID=$(curl -sS -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" \
-            | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
+          RELEASE_RESPONSE=/tmp/quality-gates-release-response.json
+          if HTTP_STATUS=$(curl --silent --show-error \
+            --retry 4 --retry-delay 1 --retry-max-time 120 --retry-connrefused \
+            --connect-timeout 10 --max-time 30 \
+            -H "Authorization: token $TOKEN" \
+            --output "$RELEASE_RESPONSE" --write-out '%{http_code}' \
+            "$API/releases/tags/$TAG"); then
+            :
+          else
+            CURL_STATUS=$?
+            echo "failed to look up release '$TAG' (curl exit code $CURL_STATUS)" >&2
+            exit "$CURL_STATUS"
+          fi
+
+          ID=
+          case "$HTTP_STATUS" in
+            200)
+              ID=$(sed -n 's/^{"id":\([0-9]*\).*/\1/p' "$RELEASE_RESPONSE")
+              if [ -z "$ID" ]; then
+                echo "release lookup for '$TAG' returned malformed JSON" >&2
+                cat "$RELEASE_RESPONSE" >&2
+                exit 1
+              fi
+              ;;
+            404) ;;
+            *)
+              echo "release lookup for '$TAG' returned HTTP $HTTP_STATUS" >&2
+              cat "$RELEASE_RESPONSE" >&2
+              exit 1
+              ;;
+          esac
 
           if [ -z "$ID" ]; then
-            RESP=$(curl -sS -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+            # Do not retry release creation automatically: if a timed-out
+            # POST reached Forgejo, a rerun will find the release above.
+            if curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+              -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
               -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"target_commitish\":\"main\",\"draft\":false,\"prerelease\":false}" \
-              "$API/releases")
+              --output "$RELEASE_RESPONSE" \
+              "$API/releases"; then
+              :
+            else
+              CURL_STATUS=$?
+              echo "failed to create release '$TAG' (curl exit code $CURL_STATUS)" >&2
+              cat "$RELEASE_RESPONSE" >&2
+              exit "$CURL_STATUS"
+            fi
+            RESP=$(cat "$RELEASE_RESPONSE")
             ID=$(echo "$RESP" | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
             if [ -z "$ID" ]; then
               echo "failed to create release: $RESP" >&2
@@ -224,13 +265,17 @@ jobs:
           ASSET_LIST=/tmp/quality-gates-release-assets.json
           UPLOADED_ASSETS=/tmp/quality-gates-release-assets-uploaded.txt
           : > "$UPLOADED_ASSETS"
-          if curl --fail --silent --show-error --location \
+          if HTTP_STATUS=$(curl --fail --silent --show-error \
             --retry 4 --retry-delay 1 --retry-max-time 120 --retry-connrefused \
             --connect-timeout 10 --max-time 30 \
             -H "Authorization: token $TOKEN" \
-            --output "$ASSET_LIST" \
-            "$API/releases/$ID/assets?limit=100"; then
-            :
+            --output "$ASSET_LIST" --write-out '%{http_code}' \
+            "$API/releases/$ID/assets?limit=100"); then
+            if [ "$HTTP_STATUS" != 200 ]; then
+              echo "asset listing for release '$TAG' returned HTTP $HTTP_STATUS" >&2
+              cat "$ASSET_LIST" >&2
+              exit 1
+            fi
           else
             CURL_STATUS=$?
             echo "failed to list assets for release '$TAG' (curl exit code $CURL_STATUS)" >&2
