@@ -635,3 +635,99 @@ jobs:
           git add crap-report.json
           git commit --quiet -m "crap-report for $TAG"
           git push origin HEAD:refs/heads/reports
+
+  standalone-gate-canary:
+    name: Standalone gate installer canary (${{ matrix.case }})
+    if: github.event_name == 'pull_request'
+    runs-on: [self-hosted, roost-r]
+    container:
+      image: golang:1.26.9-alpine
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: both-pinned
+            cycle_version: v0.1.0
+            arch_version: v0.1.0
+            expected_cycle_version: bd7677f
+            expected_arch_version: 58f0efa
+          - case: cycle-pinned
+            cycle_version: v0.1.0
+            arch_version: ''
+            expected_cycle_version: bd7677f
+            expected_arch_version: c1f3728
+          - case: arch-pinned
+            cycle_version: ''
+            arch_version: v0.1.0
+            expected_cycle_version: c1f3728
+            expected_arch_version: 58f0efa
+          - case: suite-fallback
+            cycle_version: ''
+            arch_version: ''
+            expected_cycle_version: c1f3728
+            expected_arch_version: c1f3728
+    steps:
+      - name: Install checkout and download prerequisites
+        run: apk add --no-cache nodejs curl git
+
+      - uses: https://code.forgejo.org/actions/checkout@v4
+
+      - name: Install suite fallback and standalone pins
+        uses: http://forgejo:3000/cadeh/ci-workflows/actions/install-quality-gates@main
+        with:
+          version: c1f3728
+          cycle-version: ${{ matrix.cycle_version }}
+          arch-version: ${{ matrix.arch_version }}
+
+      - name: Confirm each binary came from the selected release
+        env:
+          EXPECTED_CYCLE_VERSION: ${{ matrix.expected_cycle_version }}
+          EXPECTED_ARCH_VERSION: ${{ matrix.expected_arch_version }}
+        run: |
+          set -eu
+          cycle_version=$(cycle-metric version)
+          arch_version=$(arch-metric version)
+          printf '%s\n' "$cycle_version" "$arch_version"
+          test "$cycle_version" = "cycle-metric $EXPECTED_CYCLE_VERSION"
+          test "$arch_version" = "arch-metric $EXPECTED_ARCH_VERSION"
+
+      - name: Assert expected findings with the installed releases
+        run: |
+          set -eu
+          expect_finding() {
+            name=$1
+            summary=$2
+            detail=$3
+            detail2=$4
+            shift 4
+            output_file=$(mktemp)
+            command_status=0
+            "$@" >"$output_file" 2>&1 || command_status=$?
+            cat "$output_file"
+            if [ "$command_status" -ne 1 ]; then
+              echo "$name: expected findings to fail the zero threshold with exit 1; got $command_status" >&2
+              rm -f "$output_file"
+              return 1
+            fi
+            if ! grep -Fq "$summary" "$output_file" || ! grep -Fq "$detail" "$output_file" || { [ -n "$detail2" ] && ! grep -Fq "$detail2" "$output_file"; }; then
+              echo "$name: expected summary and required finding details" >&2
+              rm -f "$output_file"
+              return 1
+            fi
+            rm -f "$output_file"
+          }
+
+          expect_finding 'Python cycle' '1 cycle(s) found' 'pkg/a.py -> pkg/b.py -> pkg/a.py' '' \
+            cycle-metric check --lang python --dir testdata/cycle/python --fail-above 0 --require-analysis --json ''
+          expect_finding 'TypeScript cycle' '1 cycle(s) found' 'pkg/a.ts -> pkg/b.ts -> pkg/a.ts' '' \
+            cycle-metric check --lang ts --dir testdata/cycle/typescript --fail-above 0 --require-analysis --json ''
+          expect_finding 'JavaScript cycle' '1 cycle(s) found' 'pkg/a.js -> pkg/b.js -> pkg/a.js' '' \
+            cycle-metric check --lang js --dir testdata/cycle/javascript --fail-above 0 --require-analysis --json ''
+          expect_finding 'Python architecture' '1 violation(s) found' 'pkg/domain -> pkg/infra' '' \
+            arch-metric check --lang python --dir testdata/arch/python --fail-above 0 --require-analysis --json ''
+          expect_finding 'TypeScript architecture' '1 violation(s) found' 'pkg/domain -> pkg/infra' '' \
+            arch-metric check --lang ts --dir testdata/arch/typescript --fail-above 0 --require-analysis --json ''
+          expect_finding 'Go architecture' '2 violation(s) found' 'cmd/b -> cmd/a' 'domain -> infra' \
+            arch-metric check --lang go --dir testdata/arch/golang --fail-above 0 --require-analysis --json ''
+          expect_finding 'Go stability' '1 stability violation(s) found' 'stable (I=0.33) -> unstable (I=0.50)' '' \
+            arch-metric stability --lang go --dir testdata/arch/golang-stability --fail-above 0 --require-analysis --json ''

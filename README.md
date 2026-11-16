@@ -735,6 +735,14 @@ Consumed by `d_amp_d`, `grounded`, and `health-suite` via `ci-workflows`'
 and verifies each download against `SHA256SUMS`; its optional `version` input
 pins to a specific release tag instead of always floating on `latest`.
 
+The standalone `cycle-metric` and `arch-metric` binaries are also published
+from their own repositories at `v0.1.0`. Their optional installer pins
+passed the strengthened four-case live canary in [PR #35 run #122](https://git.roost-r.com/cadeh/quality-gates/actions/runs/122),
+then passed a final-head rerun in [run #123](https://git.roost-r.com/cadeh/quality-gates/actions/runs/123).
+Other consumer workflows remain on the suite fallback pending separate
+migration. See [MIGRATION.md](MIGRATION.md) for the release evidence and
+rollout status.
+
 ## Development
 
 ```
