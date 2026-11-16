@@ -633,7 +633,8 @@ jobs:
           cp crap-report.json /tmp/reports-worktree/crap-report.json
           cd /tmp/reports-worktree || exit 1
           git add crap-report.json
-          git commit --quiet -m "crap-report for $TAG"
+          # Preserve one reports-branch snapshot per run even when the report is unchanged.
+          git commit --quiet --allow-empty -m "crap-report for $TAG"
           git push origin HEAD:refs/heads/reports
 
   standalone-gate-canary:
